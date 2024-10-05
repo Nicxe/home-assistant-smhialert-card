@@ -7,7 +7,28 @@ This card is a custom card specifically for the [SMHI Alert integration](https:/
 
 ## Installation
 
-You can install this custom component using HACS as a custom repository by following this link: [HACS Custom Repositories Guide.](https://www.hacs.xyz/docs/faq/custom_repositories/?h=custom%20repositories)
+
+You can install this custom component using [HACS](https://www.hacs.xyz/) as a custom repository by following this guide:
+
+1. Click on the 3 dots in the top right corner of the HACS overview menu.
+2. Select "Custom repositories".
+3. Add the URL to the repository: ```https://github.com/Nicxe/home-assistant-smhialert-card```
+4. Select type: Dashborad
+5. Click the "ADD" button.
+
+
+
+
+<details>
+
+<summary>**Manual Installation** *(without HACS)*</summary>
+
+1. Download the latest release of ```smhialert-card.js``` from GitHub Releases.
+2. Place the smhialert-card.js file in your Home Assistant www folder (usually located in the config/www directory).
+3. Add the following resource to your Home Assistant configuration by editing in raw mode: ```/local/smhi-alert-card.js```
+4. Save your changes and refresh your Home Assistant interface to ensure the new resource is loaded.
+</details>
+
 
 ## Configuration
 
