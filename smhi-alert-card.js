@@ -25,9 +25,25 @@ class SmhiAlertCard extends HTMLElement {
     const style = document.createElement('style');
 
     style.textContent = `
+      ha-card {
+        padding: 5px;
+      }
+      .header {
+        padding: 16px;
+        font-size: 1.5em;
+        font-weight: bold;
+        background-color: var(--primary-color);
+        border-radius: 5px;
+        color: white;
+        border-bottom: 1px solid var(--divider-color);
+        margin-bottom: 5px;
+      }
+      .name {
+        margin: 0;
+      }
       .box {
-        padding: 10px;
-        margin-bottom: 10px;
+        padding: 5px;
+        margin-bottom: 5px;
         border: 1px solid var(--primary-color);
         border-radius: 5px;
         background-color: var(--card-background-color);
