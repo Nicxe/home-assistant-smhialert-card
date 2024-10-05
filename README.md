@@ -1,7 +1,7 @@
 # SMHI Weather Warnings Card
 
 ## Overview
-This card is a custom card specifically for the [SMHI Alert integration](https://github.com/Nicxe/home-assistant-smhialert) to display weather warnings from SMHI in Home Assistant. For more information, see [SMHI Alert Integration](https://github.com/Nicxe/home-assistant-smhialert).
+This card is a custom card specifically for the [SMHI Alert integration](https://github.com/Nicxe/home-assistant-smhialert) to display weather warnings from SMHI (Swedish Meteorological and Hydrological Institute) in Home Assistant.
 
 *Based on [https://github.com/Lallassu/smhialert](https://github.com/Lallassu/smhialert)*
 
