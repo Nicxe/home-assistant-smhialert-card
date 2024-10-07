@@ -11,6 +11,9 @@ You can install this card by following one of the guides below:
 
 ### With HACS (Recommended)
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Nicxe&repository=home-assistant-smhialert-card&category=plugin)
+
+
 1. Click on the three dots in the top right corner of the HACS overview menu.
 2. Select **Custom repositories**.
 3. Add the repository URL: `https://github.com/Nicxe/home-assistant-smhialert-card`.
