@@ -1,27 +1,6 @@
 {
-  "name": "SMHI Alert card",
-  "filename": "yellow_warning.js",
-  "render_readme": true,
-  "resources": [
-    {
-      "file_name": "orange_warning.svg",
-      "file_type": "image"
-    },
-    {
-      "file_name": "red_warning.svg",
-      "file_type": "image"
-    },
-    {
-      "file_name": "water-shortage.js",
-      "file_type": "script"
-    },
-    {
-      "file_name": "temperature.svg",
-      "file_type": "image"
-    },
-    {
-      "file_name": "fire.svg",
-      "file_type": "image"
-    }
-  ]
-}
+    "name": "SMHI Alert card",
+    "filename": "smhi-alert-card.js",
+    "render_readme": true
+  }
+  
