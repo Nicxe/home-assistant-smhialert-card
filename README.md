@@ -38,7 +38,7 @@ You can install this card by following one of the guides below:
             type: module
         ```
 
-</details>details>
+</details>
     
 ## Configuration
 
