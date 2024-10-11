@@ -21,7 +21,10 @@ You can install this card by following one of the guides below:
 5. Click the **Add** button.
 6. Search for **SMHI Alert Card** in HACS and click the **Download** button.
 
-### Without HACS
+<details>
+<summary>Without HACS</summary>
+
+
 
 1. Download the `smhi-alert-card.js` file from the [latest release](https://github.com/Nicxe/home-assistant-smhialert-card/releases).
 2. Place the `smhi-alert-card.js` file in your `config/www` folder.
@@ -35,6 +38,8 @@ You can install this card by following one of the guides below:
             type: module
         ```
 
+</details>details>
+    
 ## Configuration
 
 The card can be configured using the dashboard UI editor:
@@ -49,6 +54,7 @@ The card can be configured using the dashboard UI editor:
 ```yaml
 type: custom:smhi-alert-card
 entity: sensor.smhi_alert
+show_header: true
 show_type: true
 show_level: true
 show_severity: true
@@ -60,4 +66,6 @@ title: Vädervarningar
 
 ## Usage Screenshots
 
-![Screenshot](https://github.com/Nicxe/home-assistant-smhialert-card/blob/main/Screenshot.png)
+![Screenshot](https://github.com/Nicxe/home-assistant-smhialert-card/blob/main/Screenshot_1.png)
+
+![Screenshot](https://github.com/Nicxe/home-assistant-smhialert-card/blob/main/Screenshot_2.png)
