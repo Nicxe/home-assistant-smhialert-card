@@ -1,4 +1,7 @@
-# SMHI Weather Warnings Card
+# SMHI Weather Warnings Card,
+
+<a href="https://buymeacoffee.com/niklasv" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
+
 
 ## Overview
 This custom card is designed for the [SMHI Alert integration](https://github.com/Nicxe/home-assistant-smhialert), allowing you to display weather warnings from the Swedish Meteorological and Hydrological Institute (SMHI) on your Home Assistant dashboards.
