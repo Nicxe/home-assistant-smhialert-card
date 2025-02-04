@@ -71,5 +71,3 @@ title: Vädervarningar
 ## Usage Screenshots
 
 ![Screenshot](https://github.com/Nicxe/home-assistant-smhialert-card/blob/main/Screenshot_1.png)
-
-![Screenshot](https://github.com/Nicxe/home-assistant-smhialert-card/blob/main/Screenshot_2.png)
