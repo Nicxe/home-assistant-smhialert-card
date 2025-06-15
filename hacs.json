@@ -1,5 +1,5 @@
 {
   "name": "SMHI Alert card",
-  "filename": "dist/smhi-alert-card.js",
+  "filename": "smhi-alert-card.js",
   "render_readme": true
 }
