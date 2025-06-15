@@ -26,23 +26,22 @@ You can install this card by following one of the guides below:
 3. Add the repository URL: `https://github.com/Nicxe/home-assistant-smhialert-card`.
 4. Set the type to **Dashboard**.
 5. Click the **Add** button.
-6. Search for **SMHI Alert Card** in HACS and click the **Download** button.
+6. Search for **SMHI Alert Card** in HACS and click the **Download** button. The card and its icons are installed together under `hacsfiles/smhi-alert-card/`.
 
 <details>
 <summary>Without HACS</summary>
 
 
 
-1. Download the `smhi-alert-card.js` file from the [latest release](https://github.com/Nicxe/home-assistant-smhialert-card/releases).
-2. Place the `smhi-alert-card.js` file in your `config/www` folder.
-3. Copy the `icon` directory to your `config/www` folder so the card can load its images.
-4. Add a reference to `smhi-alert-card.js` in your dashboard. There are two ways to do this:
-    - **Using the UI:** Go to _Settings_ → _Dashboards_ → _More Options_ → _Resources_ → _Add Resource_. Set the URL as `/local/smhi-alert-card.js` and set the _Resource type_ to `JavaScript Module`.
+1. Download the contents of the `dist` directory from the [latest release](https://github.com/Nicxe/home-assistant-smhialert-card/releases).
+2. Copy the `dist` folder (containing `smhi-alert-card.js` and the `icon` directory) into your `config/www` directory, e.g. `config/www/smhi-alert-card/`.
+3. Add a reference to `smhi-alert-card.js` in your dashboard. There are two ways to do this:
+    - **Using the UI:** Go to _Settings_ → _Dashboards_ → _More Options_ → _Resources_ → _Add Resource_. Set the URL as `/local/smhi-alert-card/smhi-alert-card.js` and set the _Resource type_ to `JavaScript Module`.
       **Note:** If you do not see the Resources menu, you need to enable _Advanced Mode_ in your _User Profile_.
     - **Using YAML:** Add the following code to the `lovelace` section of your configuration:
         ```yaml
         resources:
-          - url: /local/smhi-alert-card.js
+          - url: /local/smhi-alert-card/smhi-alert-card.js
             type: module
         ```
 
