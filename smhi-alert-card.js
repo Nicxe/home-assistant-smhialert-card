@@ -1,11 +1,11 @@
 import { LitElement, html, css } from 'https://unpkg.com/lit?module';
 
-const fireIcon = new URL('./icon/fire.svg', import.meta.url).href;
-const waterShortageIcon = new URL('./icon/waterShortage.svg', import.meta.url).href;
-const temperatureIcon = new URL('./icon/temperature.svg', import.meta.url).href;
-const yellowWarningIcon = new URL('./icon/yellowWarning.svg', import.meta.url).href;
-const orangeWarningIcon = new URL('./icon/orangeWarning.svg', import.meta.url).href;
-const redWarningIcon = new URL('./icon/redWarning.svg', import.meta.url).href;
+const fireIcon = new URL('./fire.svg', import.meta.url).href;
+const waterShortageIcon = new URL('./waterShortage.svg', import.meta.url).href;
+const temperatureIcon = new URL('./temperature.svg', import.meta.url).href;
+const yellowWarningIcon = new URL('./yellowWarning.svg', import.meta.url).href;
+const orangeWarningIcon = new URL('./orangeWarning.svg', import.meta.url).href;
+const redWarningIcon = new URL('./redWarning.svg', import.meta.url).href;
 
 class SmhiAlertCard extends LitElement {
   static properties = {
