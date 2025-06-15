@@ -1,8 +1,5 @@
 {
   "name": "SMHI Alert card",
   "filename": "smhi-alert-card.js",
-  "render_readme": true,
-  "version": "1.0.0",
-  "type": "plugin",
-  "description": "Display Swedish weather warnings from the SMHI integration"
+  "render_readme": true
 }
