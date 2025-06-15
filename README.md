@@ -8,6 +8,9 @@
 This custom card is designed for the [SMHI Alert integration](https://github.com/Nicxe/home-assistant-smhialert), allowing you to display weather warnings from the Swedish Meteorological and Hydrological Institute (SMHI) on your Home Assistant dashboards.
 
 *Based on [https://github.com/Lallassu/smhialert](https://github.com/Lallassu/smhialert)*
+## Disclaimer
+This project is not affiliated with or supported by Home Assistant. It is community maintained.
+
 
 ## Installation
 
@@ -32,7 +35,8 @@ You can install this card by following one of the guides below:
 
 1. Download the `smhi-alert-card.js` file from the [latest release](https://github.com/Nicxe/home-assistant-smhialert-card/releases).
 2. Place the `smhi-alert-card.js` file in your `config/www` folder.
-3. Add a reference to `smhi-alert-card.js` in your dashboard. There are two ways to do this:
+3. Copy the `icons` directory to your `config/www` folder so the card can load its images.
+4. Add a reference to `smhi-alert-card.js` in your dashboard. There are two ways to do this:
     - **Using the UI:** Go to _Settings_ → _Dashboards_ → _More Options_ → _Resources_ → _Add Resource_. Set the URL as `/local/smhi-alert-card.js` and set the _Resource type_ to `JavaScript Module`.
       **Note:** If you do not see the Resources menu, you need to enable _Advanced Mode_ in your _User Profile_.
     - **Using YAML:** Add the following code to the `lovelace` section of your configuration:
@@ -71,3 +75,6 @@ title: Vädervarningar
 ## Usage Screenshots
 
 ![Screenshot](https://github.com/Nicxe/home-assistant-smhialert-card/blob/main/Screenshot_1.png)
+
+## Versioning
+Releases are tagged on GitHub using semantic version numbers. Use the release page to download specific versions.
