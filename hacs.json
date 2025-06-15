@@ -1,6 +1,7 @@
 {
   "name": "SMHI Alert card",
   "filename": "smhi-alert-card.js",
-  "type": "frontend",
-  "render_readme": true
+  "render_readme": true,
+  "zip_release": true,
+  "content_in_root": true
 }
