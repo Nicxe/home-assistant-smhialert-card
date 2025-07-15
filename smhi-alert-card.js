@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'https://unpkg.com/lit?module';
+import { unsafeHTML } from 'https://unpkg.com/lit/directives/unsafe-html.js?module';
 
 const fireIcon = new URL('./fire.svg', import.meta.url).href;
 const waterShortageIcon = new URL('./waterShortage.svg', import.meta.url).href;
@@ -130,7 +131,7 @@ class SmhiAlertCard extends LitElement {
                     ${this.config.show_period
                       ? html`<b>Period:</b> ${new Date(item.start).toLocaleString()} - ${item.end !== 'Okänt' ? new Date(item.end).toLocaleString() : 'Okänt'}<br>`
                       : ''}
-                    ${this.config.show_details ? html`<b>Description:</b><br>${item.details.replace(/\n/g, '<br>')}` : ''}
+                    ${this.config.show_details ? html`<b>Description:</b><br>${unsafeHTML(item.details.replace(/\n/g, '<br>'))}` : ''}
                   </div>
                 </div>
               `
