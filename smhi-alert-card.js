@@ -126,6 +126,7 @@ class SmhiAlertCard extends LitElement {
                   <div class="msg">
                     ${this.config.show_type ? html`<b>Type:</b> ${item.event}<br>` : ''}
                     ${this.config.show_level ? html`<b>Level:</b> ${item.level}<br>` : ''}
+                    ${this.config.show_descr ? html`<b>Descr:</b> ${item.descr}<br>` : ''}
                     ${this.config.show_severity ? html`<b>Severity:</b> ${item.severity}<br>` : ''}
                     ${this.config.show_published ? html`<b>Published:</b> ${new Date(item.published).toLocaleString()}<br>` : ''}
                     ${this.config.show_period
@@ -152,6 +153,7 @@ class SmhiAlertCard extends LitElement {
       show_level: true,
       show_severity: true,
       show_published: true,
+      show_descr: true,
       show_period: true,
       show_details: true,
       show_border: true,
@@ -206,6 +208,7 @@ class SmhiAlertCardEditor extends HTMLElement {
         { name: 'show_severity', selector: { boolean: {} } },
         { name: 'show_published', selector: { boolean: {} } },
         { name: 'show_period', selector: { boolean: {} } },
+        { name: 'show_descr', selector: { boolean: {} } },
         { name: 'show_details', selector: { boolean: {} } },
         { name: 'show_border', selector: { boolean: {} } },
       ];
@@ -219,6 +222,7 @@ class SmhiAlertCardEditor extends HTMLElement {
         show_severity: this._config.show_severity !== undefined ? this._config.show_severity : true,
         show_published: this._config.show_published !== undefined ? this._config.show_published : true,
         show_period: this._config.show_period !== undefined ? this._config.show_period : true,
+        show_descr: this._config.show_descr !== undefined ? this._config.show_descr : true,
         show_details: this._config.show_details !== undefined ? this._config.show_details : true,
         show_border: this._config.show_border !== undefined ? this._config.show_border : true,
       };
@@ -253,6 +257,7 @@ class SmhiAlertCardEditor extends HTMLElement {
         show_severity: this._config.show_severity !== undefined ? this._config.show_severity : true,
         show_published: this._config.show_published !== undefined ? this._config.show_published : true,
         show_period: this._config.show_period !== undefined ? this._config.show_period : true,
+        show_descr: this._config.show_descr !== undefined ? this._config.show_descr : true,
         show_details: this._config.show_details !== undefined ? this._config.show_details : true,
         show_border: this._config.show_border !== undefined ? this._config.show_border : true,
       };
