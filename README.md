@@ -67,6 +67,7 @@ show_level: true
 show_severity: true
 show_published: true
 show_period: true
+show_descr: true
 show_details: true
 title: Vädervarningar
 ```
