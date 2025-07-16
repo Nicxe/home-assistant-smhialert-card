@@ -131,6 +131,7 @@ class SmhiAlertCard extends LitElement {
                     ${this.config.show_period
                       ? html`<b>Period:</b> ${new Date(item.start).toLocaleString()} - ${item.end !== 'Okänt' ? new Date(item.end).toLocaleString() : 'Okänt'}<br>`
                       : ''}
+                    ${this.config.show_descr ? html`<b>Descr:</b> ${item.descr}<br>` : ''}
                     ${this.config.show_details ? html`<b>Description:</b><br>${unsafeHTML(item.details.replace(/\n/g, '<br>'))}` : ''}
                   </div>
                 </div>
@@ -153,6 +154,7 @@ class SmhiAlertCard extends LitElement {
       show_severity: true,
       show_published: true,
       show_period: true,
+      show_descr: true,
       show_details: true,
       show_border: true,
     };
@@ -206,6 +208,7 @@ class SmhiAlertCardEditor extends HTMLElement {
         { name: 'show_severity', selector: { boolean: {} } },
         { name: 'show_published', selector: { boolean: {} } },
         { name: 'show_period', selector: { boolean: {} } },
+        { name: 'show_descr', selector: { boolean: {} } },
         { name: 'show_details', selector: { boolean: {} } },
         { name: 'show_border', selector: { boolean: {} } },
       ];
@@ -219,6 +222,7 @@ class SmhiAlertCardEditor extends HTMLElement {
         show_severity: this._config.show_severity !== undefined ? this._config.show_severity : true,
         show_published: this._config.show_published !== undefined ? this._config.show_published : true,
         show_period: this._config.show_period !== undefined ? this._config.show_period : true,
+        show_descr: this._config.show_descr !== undefined ? this._config.show_descr : true,
         show_details: this._config.show_details !== undefined ? this._config.show_details : true,
         show_border: this._config.show_border !== undefined ? this._config.show_border : true,
       };
@@ -253,6 +257,7 @@ class SmhiAlertCardEditor extends HTMLElement {
         show_severity: this._config.show_severity !== undefined ? this._config.show_severity : true,
         show_published: this._config.show_published !== undefined ? this._config.show_published : true,
         show_period: this._config.show_period !== undefined ? this._config.show_period : true,
+        show_descr: this._config.show_descr !== undefined ? this._config.show_descr : true,
         show_details: this._config.show_details !== undefined ? this._config.show_details : true,
         show_border: this._config.show_border !== undefined ? this._config.show_border : true,
       };
