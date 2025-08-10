@@ -24,11 +24,6 @@ class SmhiAlertCard extends LitElement {
       gap: 8px;
       padding: 0 12px 12px 12px;
     }
-    .area-group {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
     .alert {
       display: grid;
       grid-template-columns: auto 1fr auto;
@@ -100,13 +95,6 @@ class SmhiAlertCard extends LitElement {
       color: var(--secondary-text-color);
       padding: 8px 12px 12px 12px;
     }
-
-    /* Editor-only controls */
-    .meta-fields { margin: 12px 0; padding: 0 12px; }
-    .meta-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 6px 0; }
-    .order-actions { display: flex; gap: 6px; }
-    .order-btn { background: var(--secondary-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 2px 6px; cursor: pointer; }
-    .order-btn[disabled] { opacity: 0.4; cursor: default; }
   `;
 
   setConfig(config) {
@@ -222,43 +210,27 @@ class SmhiAlertCard extends LitElement {
         ${messages.length === 0
           ? html`<div class="empty">${t('no_alerts')}</div>`
           : html`<div class="alerts">${this._renderGrouped(messages)}</div>`}
-        ${this._renderEditorMetaControls?.() || html``}
       </ha-card>
     `;
   }
 
   _renderGrouped(messages) {
     const groupBy = this.config?.group_by || 'none';
-    if (groupBy === 'none') {
+    if (groupBy !== 'area') {
       return messages.map((item, idx) => this._renderAlert(item, idx));
     }
-    const groups = {};
-    const getKey = (m) => {
-      if (groupBy === 'area') return m.area || '—';
-      if (groupBy === 'type') return m.event || '—';
-      if (groupBy === 'level') return m.level || '—';
-      if (groupBy === 'severity') return (m.code || '—');
-      return '—';
-    };
+    // group by area
+    const areaToItems = {};
     for (const m of messages) {
-      const key = getKey(m);
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(m);
+      const key = m.area || '—';
+      if (!areaToItems[key]) areaToItems[key] = [];
+      areaToItems[key].push(m);
     }
-    let keys = Object.keys(groups);
-    if (groupBy === 'severity') {
-      keys.sort((a, b) => {
-        const ra = this._severityRank({ code: String(a).toUpperCase() });
-        const rb = this._severityRank({ code: String(b).toUpperCase() });
-        return rb - ra;
-      });
-    } else {
-      keys.sort((a, b) => String(a).localeCompare(String(b)));
-    }
-    return keys.map((key) => html`
+    const areas = Object.keys(areaToItems).sort();
+    return areas.map((area) => html`
       <div class="area-group">
-        <div class="meta" style="margin: 0 12px;">${key}</div>
-        ${groups[key].map((item, idx) => this._renderAlert(item, idx))}
+        <div class="meta" style="margin: 0 12px;">${area}</div>
+        ${areaToItems[area].map((item, idx) => this._renderAlert(item, idx))}
       </div>
     `);
   }
@@ -270,33 +242,22 @@ class SmhiAlertCard extends LitElement {
       code === 'RED' ? 'sev-red' : code === 'ORANGE' ? 'sev-orange' : code === 'YELLOW' ? 'sev-yellow' : 'sev-message';
     const expanded = !!this._expanded[this._alertKey(item, idx)];
     const showIcon = this.config.show_icon !== false;
-    const metaFields = {
-      area: (this.config.show_area !== false && item.area)
-        ? html`<span><b>${t('area')}:</b> ${item.area}</span>`
-        : null,
-      type: (this.config.show_type !== false && item.event)
-        ? html`<span><b>${t('type')}:</b> ${item.event}</span>`
-        : null,
-      level: (this.config.show_level !== false && item.level)
-        ? html`<span><b>${t('level')}:</b> ${item.level}</span>`
-        : null,
-      severity: (this.config.show_severity !== false && item.severity)
-        ? html`<span><b>${t('severity')}:</b> ${item.severity}</span>`
-        : null,
-      published: (this.config.show_published !== false && item.published)
-        ? html`<span><b>${t('published')}:</b> ${this._fmtTs(item.published)}</span>`
-        : null,
-      period: (this.config.show_period !== false && (item.start || item.end))
-        ? html`<span><b>${t('period')}:</b> ${this._fmtTs(item.start)} – ${this._fmtEnd(item.end)}</span>`
-        : null,
-    };
-    const order = Array.isArray(this.config.meta_order) && this.config.meta_order.length
-      ? this.config.meta_order
-      : ['area', 'type', 'level', 'severity', 'published', 'period'];
-    const parts = order
-      .map((key) => metaFields[key])
-      .filter((node) => !!node);
-    // description is used as title; no separate description row
+    const parts = [];
+    // Area first in meta
+    if (this.config.show_area !== false && item.area) parts.push(html`<span><b>${t('area')}:</b> ${item.area}</span>`);
+    if (this.config.show_type !== false && item.event) parts.push(html`<span><b>${t('type')}:</b> ${item.event}</span>`);
+    if (this.config.show_level !== false && item.level) parts.push(html`<span><b>${t('level')}:</b> ${item.level}</span>`);
+    if (this.config.show_severity !== false && item.severity) parts.push(html`<span><b>${t('severity')}:</b> ${item.severity}</span>`);
+    if (this.config.show_published !== false && item.published) parts.push(html`<span><b>${t('published')}:</b> ${this._fmtTs(item.published)}</span>`);
+    if (this.config.show_period !== false && (item.start || item.end))
+      parts.push(html`<span><b>${t('period')}:</b> ${this._fmtTs(item.start)} – ${this._fmtEnd(item.end)}</span>`);
+    if (this.config.show_description !== false && item.descr) {
+      // Avoid duplicating description if used as title
+      const titleText = item.descr || '';
+      if (titleText && titleText !== (item.descr || '')) {
+        parts.push(html`<span><b>${t('description_short')}:</b> ${item.descr}</span>`);
+      }
+    }
 
     return html`
       <div
@@ -315,26 +276,16 @@ class SmhiAlertCard extends LitElement {
           </div>
           ${parts.length > 0 ? html`<div class="meta">${parts}</div>` : html``}
           ${this.config.show_details !== false && item.details
-            ? (() => {
-                const canCollapse = this.config.collapse_details !== false; // default true
-                const content = String(item.details || '');
-                if (!canCollapse) {
-                  return html`<div class="details"><ha-markdown breaks .content=${content}></ha-markdown></div>`;
-                }
-                return html`
-                  <div class="details">
-                    <div
-                      class="details-toggle"
-                      @click=${(e) => this._toggleDetails(e, item, idx)}
-                      @pointerdown=${(e) => e.stopPropagation()}
-                      @pointerup=${(e) => e.stopPropagation()}
-                      @keydown=${(e) => e.stopPropagation()}
-                    >
-                      ${expanded ? t('hide_details') : t('show_details')}
-                    </div>
-                    ${expanded ? html`<ha-markdown breaks .content=${content}></ha-markdown>` : html``}
-                  </div>`;
-              })()
+            ? html`
+                <div class="details">
+                  <div class="details-toggle" @click=${(e) => this._toggleDetails(e, item, idx)}>
+                    ${expanded ? t('hide_details') : t('show_details')}
+                  </div>
+                  ${expanded
+                    ? html`<ha-markdown breaks .content=${String(item.details || '')}></ha-markdown>`
+                    : html``}
+                </div>
+              `
             : html``}
         </div>
         <div></div>
@@ -403,8 +354,7 @@ class SmhiAlertCard extends LitElement {
   }
 
   _fmtEnd(end) {
-    const val = String(end || '').trim().toLowerCase();
-    if (!end || val === 'okänt' || val === 'unknown') return this._t('unknown');
+    if (!end || String(end).toLowerCase() === 'okänt') return this._t('unknown');
     return this._fmtTs(end);
   }
 
@@ -415,13 +365,10 @@ class SmhiAlertCard extends LitElement {
   shouldUpdate(changed) {
     if (changed.has('config')) return true;
     if (changed.has('hass')) {
-      const stateObj = this.hass.states?.[this.config.entity];
-      const lastUpdate = String(stateObj?.attributes?.last_update || '');
-      const messages = stateObj?.attributes?.messages || [];
-      const msgKey = JSON.stringify(messages?.map((m) => [m.code, m.area, m.start, m.published]));
-      const combinedKey = `${lastUpdate}|${msgKey}`;
-      if (this._lastKey !== combinedKey) {
-        this._lastKey = combinedKey;
+      const messages = this._messages();
+      const key = JSON.stringify(messages?.map((m) => [m.code, m.area, m.start, m.published]));
+      if (this._lastKey !== key) {
+        this._lastKey = key;
         return true;
       }
       return false;
@@ -440,7 +387,6 @@ class SmhiAlertCard extends LitElement {
         severity: 'Severity',
         published: 'Published',
         period: 'Period',
-        // description_short kept for backward compat but unused
         description_short: 'Descr',
         show_details: 'Show details',
         hide_details: 'Hide details',
@@ -454,7 +400,6 @@ class SmhiAlertCard extends LitElement {
         severity: 'Allvarlighetsgrad',
         published: 'Publicerad',
         period: 'Period',
-        // description_short kept for backward compat but unused
         description_short: 'Beskrivning',
         show_details: 'Visa detaljer',
         hide_details: 'Dölj detaljer',
@@ -466,7 +411,10 @@ class SmhiAlertCard extends LitElement {
 
   _normalizeConfig(config) {
     const normalized = { ...config };
-    // Backwards compatibility mappings (none needed currently)
+    // Backwards compatibility mappings
+    if (normalized.show_descr !== undefined && normalized.show_description === undefined) {
+      normalized.show_description = normalized.show_descr;
+    }
     // Defaults
     if (normalized.show_header === undefined) normalized.show_header = true;
     if (normalized.show_area === undefined) normalized.show_area = true;
@@ -475,15 +423,13 @@ class SmhiAlertCard extends LitElement {
     if (normalized.show_severity === undefined) normalized.show_severity = true;
     if (normalized.show_published === undefined) normalized.show_published = true;
     if (normalized.show_period === undefined) normalized.show_period = true;
+    if (normalized.show_description === undefined) normalized.show_description = true;
     if (normalized.show_details === undefined) normalized.show_details = true;
     if (normalized.show_icon === undefined) normalized.show_icon = true;
     if (normalized.hide_when_empty === undefined) normalized.hide_when_empty = false;
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
     if (normalized.group_by === undefined) normalized.group_by = 'none';
-    if (!Array.isArray(normalized.meta_order) || normalized.meta_order.length === 0) {
-      normalized.meta_order = ['area','type','level','severity','published','period'];
-    }
     if (!Array.isArray(normalized.filter_severities)) normalized.filter_severities = [];
     if (!Array.isArray(normalized.filter_areas)) normalized.filter_areas = [];
     if (normalized.collapse_details === undefined) normalized.collapse_details = true;
@@ -507,6 +453,7 @@ class SmhiAlertCard extends LitElement {
       show_severity: true,
       show_published: true,
       show_period: true,
+      show_description: true,
       show_details: true,
       hide_when_empty: true,
       max_items: 0,
@@ -515,7 +462,6 @@ class SmhiAlertCard extends LitElement {
       filter_severities: [],
       filter_areas: [],
       collapse_details: true,
-      meta_order: ['area','type','level','severity','published','period'],
     };
   }
 }
@@ -531,11 +477,9 @@ class SmhiAlertCardEditor extends LitElement {
   };
 
   static styles = css`
-    .container { padding: 8px 0 0 0; }
-    .meta-fields { margin: 12px 0; padding: 8px 12px; }
-    .meta-fields-title { color: var(--secondary-text-color); margin-bottom: 6px; }
-    .meta-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 6px 0; }
-    .order-actions { display: flex; gap: 6px; }
+    .container {
+      padding: 8px 0 0 0;
+    }
   `;
 
   setConfig(config) {
@@ -561,9 +505,6 @@ class SmhiAlertCardEditor extends LitElement {
       { name: 'group_by', label: 'Group by', selector: { select: { mode: 'dropdown', options: [
         { value: 'none', label: 'No grouping' },
         { value: 'area', label: 'By area' },
-        { value: 'type', label: 'By type' },
-        { value: 'level', label: 'By level' },
-        { value: 'severity', label: 'By severity' },
       ] } } },
       { name: 'filter_severities', label: 'Filter severities', selector: { select: { multiple: true, options: [
         { value: 'RED', label: 'RED' },
@@ -573,6 +514,13 @@ class SmhiAlertCardEditor extends LitElement {
       ] } } },
       { name: 'filter_areas', label: 'Filter areas (comma-separated)', selector: { text: {} } },
       { name: 'collapse_details', label: 'Collapse details', selector: { boolean: {} } },
+      { name: 'show_area', label: 'Show area (in meta)', selector: { boolean: {} } },
+      { name: 'show_type', label: 'Show type', selector: { boolean: {} } },
+      { name: 'show_level', label: 'Show level', selector: { boolean: {} } },
+      { name: 'show_severity', label: 'Show severity', selector: { boolean: {} } },
+      { name: 'show_published', label: 'Show published', selector: { boolean: {} } },
+      { name: 'show_period', label: 'Show period', selector: { boolean: {} } },
+      { name: 'show_description', label: 'Show description', selector: { boolean: {} } },
       { name: 'show_details', label: 'Show details', selector: { boolean: {} } },
       // actions (use ui_action selector for full UI in editor)
       { name: 'tap_action', label: 'Tap action', selector: { ui_action: {} } },
@@ -598,54 +546,19 @@ class SmhiAlertCardEditor extends LitElement {
       show_severity: this._config.show_severity !== undefined ? this._config.show_severity : true,
       show_published: this._config.show_published !== undefined ? this._config.show_published : true,
       show_period: this._config.show_period !== undefined ? this._config.show_period : true,
+      show_description: this._config.show_description !== undefined ? this._config.show_description : true,
       show_details: this._config.show_details !== undefined ? this._config.show_details : true,
       tap_action: this._config.tap_action || {},
       double_tap_action: this._config.double_tap_action || {},
       hold_action: this._config.hold_action || {},
     };
 
-    const allowed = ['area','type','level','severity','published','period'];
-    const currentOrder = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
-      ? this._config.meta_order.filter((k) => allowed.includes(k))
-      : ['area','type','level','severity','published','period'];
-    const filledOrder = [...currentOrder, ...allowed.filter((k) => !currentOrder.includes(k))];
-
-    const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
-    const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
-
     return html`
       <div class="container">
         <ha-form
           .hass=${this.hass}
           .data=${data}
-          .schema=${schemaTop}
-          .computeLabel=${this._computeLabel}
-          @value-changed=${this._valueChanged}
-        ></ha-form>
-        <div class="meta-fields">
-          ${filledOrder.map((key, index) => html`
-            <ha-settings-row class="meta-row">
-              <span slot="heading">${this._labelForMeta(key)}</span>
-              <span slot="description"></span>
-              <div class="order-actions">
-                <mwc-icon-button @click=${() => this._moveMeta(key, -1)} .disabled=${index === 0} aria-label="Move up">
-                  <ha-icon icon="mdi:chevron-up"></ha-icon>
-                </mwc-icon-button>
-                <mwc-icon-button @click=${() => this._moveMeta(key, 1)} .disabled=${index === filledOrder.length - 1} aria-label="Move down">
-                  <ha-icon icon="mdi:chevron-down"></ha-icon>
-                </mwc-icon-button>
-              </div>
-              <ha-switch
-                .checked=${this._isMetaShown(key)}
-                @change=${(e) => this._toggleMeta(key, e)}
-              ></ha-switch>
-            </ha-settings-row>
-          `)}
-        </div>
-        <ha-form
-          .hass=${this.hass}
-          .data=${data}
-          .schema=${schemaActions}
+          .schema=${schema}
           .computeLabel=${this._computeLabel}
           @value-changed=${this._valueChanged}
         ></ha-form>
@@ -668,50 +581,6 @@ class SmhiAlertCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next } }));
   };
 
-  _isMetaShown(key) {
-    if (key === 'area') return this._config.show_area !== false;
-    if (key === 'type') return this._config.show_type !== false;
-    if (key === 'level') return this._config.show_level !== false;
-    if (key === 'severity') return this._config.show_severity !== false;
-    if (key === 'published') return this._config.show_published !== false;
-    if (key === 'period') return this._config.show_period !== false;
-    return true;
-  }
-
-  _toggleMeta(key, ev) {
-    const on = ev?.target?.checked ?? true;
-    let next = { ...this._config };
-    if (key === 'area') next.show_area = on;
-    else if (key === 'type') next.show_type = on;
-    else if (key === 'level') next.show_level = on;
-    else if (key === 'severity') next.show_severity = on;
-    else if (key === 'published') next.show_published = on;
-    else if (key === 'period') next.show_period = on;
-    this._config = next;
-    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next } }));
-  }
-
-  _moveMeta(key, delta) {
-    const allowed = ['area','type','level','severity','published','period'];
-    const order = (this._config.meta_order && Array.isArray(this._config.meta_order))
-      ? this._config.meta_order.filter((k) => allowed.includes(k))
-      : ['area','type','level','severity','published','period'];
-    const idx = order.indexOf(key);
-    if (idx < 0) return;
-    const newIdx = Math.max(0, Math.min(order.length - 1, idx + delta));
-    if (newIdx === idx) return;
-    const next = [...order];
-    next.splice(idx, 1);
-    next.splice(newIdx, 0, key);
-    this._config = { ...this._config, meta_order: next };
-    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
-  }
-
-  _labelForMeta(key) {
-    const map = { area: 'Area', type: 'Type', level: 'Level', severity: 'Severity', published: 'Published', period: 'Period' };
-    return map[key] || key;
-  }
-
   _computeLabel = (schema) => {
     const labels = {
       entity: 'Entity',
@@ -725,12 +594,12 @@ class SmhiAlertCardEditor extends LitElement {
       filter_severities: 'Filter severities',
       filter_areas: 'Filter areas (comma-separated)',
       collapse_details: 'Collapse details',
-      show_area: 'Show area',
       show_type: 'Show type',
       show_level: 'Show level',
       show_severity: 'Show severity',
       show_published: 'Show published',
       show_period: 'Show period',
+      show_description: 'Show description',
       show_details: 'Show details',
       tap_action: 'Tap action',
       double_tap_action: 'Double tap action',
