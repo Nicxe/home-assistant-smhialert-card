@@ -17,6 +17,12 @@ class SmhiAlertCard extends LitElement {
   static styles = css`
     ha-card {
       padding: 8px 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      --ha-card-background: transparent;
+      --ha-card-border-width: 0;
+      --ha-card-border-color: transparent;
     }
     .alerts {
       display: flex;
