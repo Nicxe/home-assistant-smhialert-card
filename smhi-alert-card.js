@@ -96,12 +96,23 @@ class SmhiAlertCard extends LitElement {
     .details {
       margin-top: 6px;
     }
+    .md-text {
+      white-space: pre-wrap;
+      line-height: 1.5;
+      font-family: inherit;
+      font-size: 0.95em;
+      color: var(--primary-text-color);
+      overflow-wrap: anywhere;
+    }
     .details-toggle {
       color: var(--primary-color);
       cursor: pointer;
       user-select: none;
       font-size: 0.95em;
+      margin-bottom: 6px;
     }
+    /* Ensure consistent spacing when details are expanded */
+    .details .meta + .md-text { margin-top: 6px; }
     .empty {
       color: var(--secondary-text-color);
       padding: 8px 12px 12px 12px;
@@ -113,6 +124,8 @@ class SmhiAlertCard extends LitElement {
     .order-actions { display: flex; gap: 6px; }
     .order-btn { background: var(--secondary-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 2px 6px; cursor: pointer; }
     .order-btn[disabled] { opacity: 0.4; cursor: default; }
+    .meta-divider-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; padding: 6px 0; color: var(--secondary-text-color); }
+    .meta-divider { border-top: 1px dashed var(--divider-color); height: 0; }
   `;
 
   setConfig(config) {
@@ -274,7 +287,6 @@ class SmhiAlertCard extends LitElement {
     const code = String(item.code || '').toUpperCase();
     const sevClass =
       code === 'RED' ? 'sev-red' : code === 'ORANGE' ? 'sev-orange' : code === 'YELLOW' ? 'sev-yellow' : 'sev-message';
-    const expanded = !!this._expanded[this._alertKey(item, idx)];
     const showIcon = this.config.show_icon !== false;
     const metaFields = {
       area: (this.config.show_area !== false && item.area)
@@ -295,14 +307,45 @@ class SmhiAlertCard extends LitElement {
       period: (this.config.show_period !== false && (item.start || item.end))
         ? html`<span><b>${t('period')}:</b> ${this._fmtTs(item.start)} – ${this._fmtEnd(item.end)}</span>`
         : null,
+      text: (this.config.show_text !== false && this._detailsText(item))
+        ? (() => {
+            const textContent = this._normalizeMultiline(this._detailsText(item));
+            return html`<div class="md-text">${textContent}</div>`;
+          })()
+        : null,
     };
-    const order = Array.isArray(this.config.meta_order) && this.config.meta_order.length
+    // Build ordered meta with optional divider and collapsible section
+    const defaultOrder = ['area','type','level','severity','published','period','divider','text'];
+    const rawOrder = Array.isArray(this.config.meta_order) && this.config.meta_order.length
       ? this.config.meta_order
-      : ['area', 'type', 'level', 'severity', 'published', 'period'];
-    const parts = order
+      : defaultOrder;
+    // Ensure divider and text exist in order exactly once
+    let order = rawOrder.filter((k, i) => rawOrder.indexOf(k) === i);
+    if (!order.includes('divider')) order = [...order, 'divider'];
+    if (!order.includes('text')) order = [...order, 'text'];
+
+    const dividerIndex = order.indexOf('divider');
+    const inlineKeys = dividerIndex >= 0 ? order.slice(0, dividerIndex) : order.filter((k) => k !== 'divider');
+    const detailsKeys = dividerIndex >= 0 ? order.slice(dividerIndex + 1) : [];
+
+    const inlineParts = inlineKeys
+      .filter((k) => k !== 'text')
       .map((key) => metaFields[key])
       .filter((node) => !!node);
-    // description is used as title; no separate description row
+
+    const inlineTextBlock = inlineKeys.includes('text') ? metaFields.text : null;
+
+    const detailsParts = detailsKeys
+      .filter((k) => k !== 'text')
+      .map((key) => metaFields[key])
+      .filter((node) => !!node);
+    const detailsTextBlock = detailsKeys.includes('text') ? metaFields.text : null;
+
+    // Default expansion: keep details collapsed unless user expands
+    const key = this._alertKey(item, idx);
+    const hasStored = Object.prototype.hasOwnProperty.call(this._expanded || {}, key);
+    let expanded = hasStored ? !!this._expanded[key] : false;
+    // no auto-expand
 
     return html`
       <div
@@ -319,32 +362,62 @@ class SmhiAlertCard extends LitElement {
           <div class="title">
             <div class="district">${item.descr || item.area || item.event || ''}</div>
           </div>
-          ${parts.length > 0 ? html`<div class="meta">${parts}</div>` : html``}
-          ${this.config.show_details !== false && item.details
-            ? (() => {
-                const canCollapse = this.config.collapse_details !== false; // default true
-                const content = String(item.details || '');
-                if (!canCollapse) {
-                  return html`<div class="details"><ha-markdown breaks .content=${content}></ha-markdown></div>`;
-                }
-                return html`
-                  <div class="details">
-                    <div
-                      class="details-toggle"
-                      @click=${(e) => this._toggleDetails(e, item, idx)}
-                      @pointerdown=${(e) => e.stopPropagation()}
-                      @pointerup=${(e) => e.stopPropagation()}
-                      @keydown=${(e) => e.stopPropagation()}
-                    >
-                      ${expanded ? t('hide_details') : t('show_details')}
-                    </div>
-                    ${expanded ? html`<ha-markdown breaks .content=${content}></ha-markdown>` : html``}
-                  </div>`;
-              })()
+          ${inlineParts.length > 0 ? html`<div class="meta">${inlineParts}</div>` : html``}
+          ${inlineTextBlock ? html`<div class="details">${inlineTextBlock}</div>` : html``}
+          ${(detailsParts.length > 0 || detailsTextBlock)
+            ? html`
+                <div class="details">
+                  <div
+                    class="details-toggle"
+                    @click=${(e) => this._toggleDetails(e, item, idx)}
+                    @pointerdown=${(e) => e.stopPropagation()}
+                    @pointerup=${(e) => e.stopPropagation()}
+                    @keydown=${(e) => e.stopPropagation()}
+                  >
+                    ${expanded ? t('hide_details') : t('show_details')}
+                  </div>
+                  ${expanded ? html`
+                    ${detailsParts.length > 0 ? html`<div class="meta">${detailsParts}</div>` : html``}
+                    ${detailsTextBlock ? html`${detailsTextBlock}` : html``}
+                  ` : html``}
+                </div>
+              `
             : html``}
         </div>
         <div></div>
       </div>`;
+  }
+
+  _detailsText(item) {
+    // Prefer details; fall back to descr; ensure string
+    const primary = item?.details;
+    const fallback = item?.descr;
+    const text = (primary && String(primary).trim().length > 0)
+      ? String(primary)
+      : (fallback && String(fallback).trim().length > 0)
+        ? String(fallback)
+        : '';
+    return text || '';
+  }
+
+  _normalizeMultiline(value) {
+    if (!value) return '';
+    let text = String(value).replace(/\r\n?/g, '\n');
+    // Trim leading/trailing empty lines
+    text = text.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+    const lines = text.split('\n');
+    // Determine common leading indent among non-empty lines, preferring positive indents.
+    // This avoids the first unindented heading line forcing minIndent to 0
+    const indents = lines
+      .filter((ln) => ln.trim().length > 0)
+      .map((ln) => {
+        const m = ln.match(/^(\s*)/);
+        return m ? m[1].length : 0;
+      });
+    const positive = indents.filter((n) => n > 0);
+    const minIndent = positive.length > 0 ? Math.min(...positive) : (indents.length > 0 ? Math.min(...indents) : 0);
+    const deindented = lines.map((ln) => (minIndent > 0 && ln.startsWith(' '.repeat(minIndent)) ? ln.slice(minIndent) : ln));
+    return deindented.join('\n');
   }
 
   _toggleDetails(e, item, idx) {
@@ -424,7 +497,8 @@ class SmhiAlertCard extends LitElement {
       const stateObj = this.hass.states?.[this.config.entity];
       const lastUpdate = String(stateObj?.attributes?.last_update || '');
       const messages = stateObj?.attributes?.messages || [];
-      const msgKey = JSON.stringify(messages?.map((m) => [m.code, m.area, m.start, m.published]));
+      // Include details/descr to re-render when description text changes
+      const msgKey = JSON.stringify(messages?.map((m) => [m.code, m.area, m.start, m.published, m.details, m.descr]));
       const combinedKey = `${lastUpdate}|${msgKey}`;
       if (this._lastKey !== combinedKey) {
         this._lastKey = combinedKey;
@@ -472,7 +546,10 @@ class SmhiAlertCard extends LitElement {
 
   _normalizeConfig(config) {
     const normalized = { ...config };
-    // Backwards compatibility mappings (none needed currently)
+    // Backwards compatibility mappings
+    if (normalized.show_text === undefined && normalized.show_details !== undefined) {
+      normalized.show_text = normalized.show_details;
+    }
     // Defaults
     if (normalized.show_header === undefined) normalized.show_header = true;
     if (normalized.show_area === undefined) normalized.show_area = true;
@@ -481,18 +558,24 @@ class SmhiAlertCard extends LitElement {
     if (normalized.show_severity === undefined) normalized.show_severity = true;
     if (normalized.show_published === undefined) normalized.show_published = true;
     if (normalized.show_period === undefined) normalized.show_period = true;
-    if (normalized.show_details === undefined) normalized.show_details = true;
+    if (normalized.show_text === undefined) normalized.show_text = true;
     if (normalized.show_icon === undefined) normalized.show_icon = true;
     if (normalized.hide_when_empty === undefined) normalized.hide_when_empty = false;
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
     if (normalized.group_by === undefined) normalized.group_by = 'none';
     if (!Array.isArray(normalized.meta_order) || normalized.meta_order.length === 0) {
-      normalized.meta_order = ['area','type','level','severity','published','period'];
+      // Default to placing text in the details section (after divider)
+      normalized.meta_order = ['area','type','level','severity','published','period','divider','text'];
+    } else {
+      // Ensure divider and text exist
+      if (!normalized.meta_order.includes('divider')) normalized.meta_order = [...normalized.meta_order, 'divider'];
+      if (!normalized.meta_order.includes('text')) normalized.meta_order = [...normalized.meta_order, 'text'];
     }
     if (!Array.isArray(normalized.filter_severities)) normalized.filter_severities = [];
     if (!Array.isArray(normalized.filter_areas)) normalized.filter_areas = [];
-    if (normalized.collapse_details === undefined) normalized.collapse_details = true;
+    // collapse_details is no longer used; collapse is inferred by divider position
+    delete normalized.collapse_details;
     if (normalized.show_border === undefined) normalized.show_border = true; // kept for compat but unused
     return normalized;
   }
@@ -513,15 +596,15 @@ class SmhiAlertCard extends LitElement {
       show_severity: true,
       show_published: true,
       show_period: true,
-      show_details: true,
+      show_text: true,
       hide_when_empty: true,
       max_items: 0,
       sort_order: 'severity_then_time',
       group_by: 'none',
       filter_severities: [],
       filter_areas: [],
-      collapse_details: true,
-      meta_order: ['area','type','level','severity','published','period'],
+      // collapse inferred by divider; default puts text in details (after divider)
+      meta_order: ['area','type','level','severity','published','period','divider','text'],
     };
   }
 }
@@ -578,8 +661,7 @@ class SmhiAlertCardEditor extends LitElement {
         { value: 'MESSAGE', label: 'MESSAGE' },
       ] } } },
       { name: 'filter_areas', label: 'Filter areas (comma-separated)', selector: { text: {} } },
-      { name: 'collapse_details', label: 'Collapse details', selector: { boolean: {} } },
-      { name: 'show_details', label: 'Show details', selector: { boolean: {} } },
+      // No explicit collapse or show_text; details are inferred by divider & per-meta toggles
       // actions (use ui_action selector for full UI in editor)
       { name: 'tap_action', label: 'Tap action', selector: { ui_action: {} } },
       { name: 'double_tap_action', label: 'Double tap action', selector: { ui_action: {} } },
@@ -597,24 +679,30 @@ class SmhiAlertCardEditor extends LitElement {
       group_by: this._config.group_by || 'none',
       filter_severities: this._config.filter_severities || [],
       filter_areas: (this._config.filter_areas || []).join(', '),
-      collapse_details: this._config.collapse_details !== undefined ? this._config.collapse_details : true,
+      // collapse inferred by divider
       show_area: this._config.show_area !== undefined ? this._config.show_area : true,
       show_type: this._config.show_type !== undefined ? this._config.show_type : true,
       show_level: this._config.show_level !== undefined ? this._config.show_level : true,
       show_severity: this._config.show_severity !== undefined ? this._config.show_severity : true,
       show_published: this._config.show_published !== undefined ? this._config.show_published : true,
       show_period: this._config.show_period !== undefined ? this._config.show_period : true,
-      show_details: this._config.show_details !== undefined ? this._config.show_details : true,
+      show_text: this._config.show_text !== undefined ? this._config.show_text : (this._config.show_details !== undefined ? this._config.show_details : true),
       tap_action: this._config.tap_action || {},
       double_tap_action: this._config.double_tap_action || {},
       hold_action: this._config.hold_action || {},
     };
 
     const allowed = ['area','type','level','severity','published','period'];
-    const currentOrder = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
-      ? this._config.meta_order.filter((k) => allowed.includes(k))
-      : ['area','type','level','severity','published','period'];
-    const filledOrder = [...currentOrder, ...allowed.filter((k) => !currentOrder.includes(k))];
+    const special = ['divider','text'];
+    const allowedWithSpecial = [...allowed, ...special];
+    const currentOrderRaw = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
+      ? this._config.meta_order.filter((k) => allowedWithSpecial.includes(k))
+      : ['area','type','level','severity','published','period','divider','text'];
+    // ensure presence
+    let currentOrder = [...currentOrderRaw];
+    if (!currentOrder.includes('divider')) currentOrder.push('divider');
+    if (!currentOrder.includes('text')) currentOrder.push('text');
+    const filledOrder = [...currentOrder, ...allowedWithSpecial.filter((k) => !currentOrder.includes(k))];
 
     const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
     const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
@@ -629,24 +717,40 @@ class SmhiAlertCardEditor extends LitElement {
           @value-changed=${this._valueChanged}
         ></ha-form>
         <div class="meta-fields">
-          ${filledOrder.map((key, index) => html`
-            <ha-settings-row class="meta-row">
-              <span slot="heading">${this._labelForMeta(key)}</span>
-              <span slot="description"></span>
-              <div class="order-actions">
-                <mwc-icon-button @click=${() => this._moveMeta(key, -1)} .disabled=${index === 0} aria-label="Move up">
-                  <ha-icon icon="mdi:chevron-up"></ha-icon>
-                </mwc-icon-button>
-                <mwc-icon-button @click=${() => this._moveMeta(key, 1)} .disabled=${index === filledOrder.length - 1} aria-label="Move down">
-                  <ha-icon icon="mdi:chevron-down"></ha-icon>
-                </mwc-icon-button>
-              </div>
-              <ha-switch
-                .checked=${this._isMetaShown(key)}
-                @change=${(e) => this._toggleMeta(key, e)}
-              ></ha-switch>
-            </ha-settings-row>
-          `)}
+          ${filledOrder.map((key, index) => {
+            if (key === 'divider') {
+              return html`
+                <ha-settings-row class="meta-divider-row">
+                  <span slot="heading">Details divider</span>
+                  <div class="order-actions">
+                    <mwc-icon-button @click=${() => this._moveMeta(key, -1)} .disabled=${index === 0} aria-label="Move up">
+                      <ha-icon icon="mdi:chevron-up"></ha-icon>
+                    </mwc-icon-button>
+                    <mwc-icon-button @click=${() => this._moveMeta(key, 1)} .disabled=${index === filledOrder.length - 1} aria-label="Move down">
+                      <ha-icon icon="mdi:chevron-down"></ha-icon>
+                    </mwc-icon-button>
+                  </div>
+                </ha-settings-row>
+              `;
+            }
+            return html`
+              <ha-settings-row class="meta-row">
+                <span slot="heading">${this._labelForMeta(key)}</span>
+                <span slot="description"></span>
+                <div class="order-actions">
+                  <mwc-icon-button @click=${() => this._moveMeta(key, -1)} .disabled=${index === 0} aria-label="Move up">
+                    <ha-icon icon="mdi:chevron-up"></ha-icon>
+                  </mwc-icon-button>
+                  <mwc-icon-button @click=${() => this._moveMeta(key, 1)} .disabled=${index === filledOrder.length - 1} aria-label="Move down">
+                    <ha-icon icon="mdi:chevron-down"></ha-icon>
+                  </mwc-icon-button>
+                </div>
+                <ha-switch
+                  .checked=${this._isMetaShown(key)}
+                  @change=${(e) => this._toggleMeta(key, e)}
+                ></ha-switch>
+              </ha-settings-row>`;
+          })}
         </div>
         <ha-form
           .hass=${this.hass}
@@ -681,6 +785,8 @@ class SmhiAlertCardEditor extends LitElement {
     if (key === 'severity') return this._config.show_severity !== false;
     if (key === 'published') return this._config.show_published !== false;
     if (key === 'period') return this._config.show_period !== false;
+    if (key === 'text') return this._config.show_text !== false;
+    if (key === 'divider') return true;
     return true;
   }
 
@@ -693,15 +799,16 @@ class SmhiAlertCardEditor extends LitElement {
     else if (key === 'severity') next.show_severity = on;
     else if (key === 'published') next.show_published = on;
     else if (key === 'period') next.show_period = on;
+    else if (key === 'text') next.show_text = on;
     this._config = next;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next } }));
   }
 
   _moveMeta(key, delta) {
-    const allowed = ['area','type','level','severity','published','period'];
+    const allowed = ['area','type','level','severity','published','period','divider','text'];
     const order = (this._config.meta_order && Array.isArray(this._config.meta_order))
       ? this._config.meta_order.filter((k) => allowed.includes(k))
-      : ['area','type','level','severity','published','period'];
+      : ['area','type','level','severity','published','period','divider','text'];
     const idx = order.indexOf(key);
     if (idx < 0) return;
     const newIdx = Math.max(0, Math.min(order.length - 1, idx + delta));
@@ -714,7 +821,7 @@ class SmhiAlertCardEditor extends LitElement {
   }
 
   _labelForMeta(key) {
-    const map = { area: 'Area', type: 'Type', level: 'Level', severity: 'Severity', published: 'Published', period: 'Period' };
+    const map = { area: 'Area', type: 'Type', level: 'Level', severity: 'Severity', published: 'Published', period: 'Period', text: 'Text', divider: '— Details —' };
     return map[key] || key;
   }
 
@@ -730,14 +837,14 @@ class SmhiAlertCardEditor extends LitElement {
       group_by: 'Group by',
       filter_severities: 'Filter severities',
       filter_areas: 'Filter areas (comma-separated)',
-      collapse_details: 'Collapse details',
+       // collapse_details removed
       show_area: 'Show area',
       show_type: 'Show type',
       show_level: 'Show level',
       show_severity: 'Show severity',
       show_published: 'Show published',
       show_period: 'Show period',
-      show_details: 'Show details',
+       // show_text is controlled as a meta toggle, not a top-level control
       tap_action: 'Tap action',
       double_tap_action: 'Double tap action',
       hold_action: 'Hold action',
