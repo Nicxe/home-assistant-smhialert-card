@@ -7,7 +7,6 @@
 ## Overview
 This custom card is designed for the [SMHI Alert integration](https://github.com/Nicxe/home-assistant-smhialert), allowing you to display weather warnings from the Swedish Meteorological and Hydrological Institute (SMHI) on your Home Assistant dashboards.
 
-*Based on [https://github.com/Lallassu/smhialert](https://github.com/Lallassu/smhialert)*
 ## Disclaimer
 This project is not affiliated with or supported by Home Assistant. It is community maintained.
 
@@ -60,20 +59,40 @@ The card can be configured using the dashboard UI editor:
 
 ```yaml
 type: custom:smhi-alert-card
-entity: sensor.smhi_alert
+entity: sensor.smhi_alerts_alla_distrikt_ej_rekommenderat
+title: ""
 show_header: true
+show_icon: true
+show_area: true
 show_type: true
 show_level: true
 show_severity: true
 show_published: true
 show_period: true
-show_details: true
-title: Vädervarningar
+show_text: true
+hide_when_empty: true
+max_items: 0
+sort_order: severity_then_time
+group_by: none
+filter_severities: []
+filter_areas: []
+meta_order:
+  - area
+  - level
+  - type
+  - divider
+  - text
+  - severity
+  - published
+  - period
+tap_action:
+  action: more-info
+double_tap_action:
+  action: none
+
 ```
 
 ## Usage Screenshots
 
-![Screenshot](https://github.com/Nicxe/home-assistant-smhialert-card/blob/main/Screenshot_1.png)
+<img width="482" height="520" alt="smhi_alert_screenshoot" src="https://github.com/user-attachments/assets/43aa66b1-1895-41b9-b919-f667154f140f" />
 
-## Versioning
-Releases are tagged on GitHub using semantic version numbers. Use the release page to download specific versions.
