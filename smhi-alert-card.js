@@ -17,12 +17,23 @@ class SmhiAlertCard extends LitElement {
   static styles = css`
     ha-card {
       padding: 8px 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      --ha-card-background: transparent;
+      --ha-card-border-width: 0;
+      --ha-card-border-color: transparent;
     }
     .alerts {
       display: flex;
       flex-direction: column;
       gap: 8px;
       padding: 0 12px 12px 12px;
+    }
+    .area-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     .alert {
       display: grid;
@@ -85,16 +96,36 @@ class SmhiAlertCard extends LitElement {
     .details {
       margin-top: 6px;
     }
+    .md-text {
+      white-space: pre-wrap;
+      line-height: 1.5;
+      font-family: inherit;
+      font-size: 0.95em;
+      color: var(--primary-text-color);
+      overflow-wrap: anywhere;
+    }
     .details-toggle {
       color: var(--primary-color);
       cursor: pointer;
       user-select: none;
       font-size: 0.95em;
+      margin-bottom: 6px;
     }
+    /* Ensure consistent spacing when details are expanded */
+    .details .meta + .md-text { margin-top: 6px; }
     .empty {
       color: var(--secondary-text-color);
       padding: 8px 12px 12px 12px;
     }
+
+    /* Editor-only controls */
+    .meta-fields { margin: 12px 0; padding: 0 12px; }
+    .meta-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 6px 0; }
+    .order-actions { display: flex; gap: 6px; }
+    .order-btn { background: var(--secondary-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+    .order-btn[disabled] { opacity: 0.4; cursor: default; }
+    .meta-divider-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; padding: 6px 0; color: var(--secondary-text-color); }
+    .meta-divider { border-top: 1px dashed var(--divider-color); height: 0; }
   `;
 
   setConfig(config) {
@@ -210,27 +241,43 @@ class SmhiAlertCard extends LitElement {
         ${messages.length === 0
           ? html`<div class="empty">${t('no_alerts')}</div>`
           : html`<div class="alerts">${this._renderGrouped(messages)}</div>`}
+        ${this._renderEditorMetaControls?.() || html``}
       </ha-card>
     `;
   }
 
   _renderGrouped(messages) {
     const groupBy = this.config?.group_by || 'none';
-    if (groupBy !== 'area') {
+    if (groupBy === 'none') {
       return messages.map((item, idx) => this._renderAlert(item, idx));
     }
-    // group by area
-    const areaToItems = {};
+    const groups = {};
+    const getKey = (m) => {
+      if (groupBy === 'area') return m.area || '—';
+      if (groupBy === 'type') return m.event || '—';
+      if (groupBy === 'level') return m.level || '—';
+      if (groupBy === 'severity') return (m.code || '—');
+      return '—';
+    };
     for (const m of messages) {
-      const key = m.area || '—';
-      if (!areaToItems[key]) areaToItems[key] = [];
-      areaToItems[key].push(m);
+      const key = getKey(m);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(m);
     }
-    const areas = Object.keys(areaToItems).sort();
-    return areas.map((area) => html`
+    let keys = Object.keys(groups);
+    if (groupBy === 'severity') {
+      keys.sort((a, b) => {
+        const ra = this._severityRank({ code: String(a).toUpperCase() });
+        const rb = this._severityRank({ code: String(b).toUpperCase() });
+        return rb - ra;
+      });
+    } else {
+      keys.sort((a, b) => String(a).localeCompare(String(b)));
+    }
+    return keys.map((key) => html`
       <div class="area-group">
-        <div class="meta" style="margin: 0 12px;">${area}</div>
-        ${areaToItems[area].map((item, idx) => this._renderAlert(item, idx))}
+        <div class="meta" style="margin: 0 12px;">${key}</div>
+        ${groups[key].map((item, idx) => this._renderAlert(item, idx))}
       </div>
     `);
   }
@@ -240,24 +287,65 @@ class SmhiAlertCard extends LitElement {
     const code = String(item.code || '').toUpperCase();
     const sevClass =
       code === 'RED' ? 'sev-red' : code === 'ORANGE' ? 'sev-orange' : code === 'YELLOW' ? 'sev-yellow' : 'sev-message';
-    const expanded = !!this._expanded[this._alertKey(item, idx)];
     const showIcon = this.config.show_icon !== false;
-    const parts = [];
-    // Area first in meta
-    if (this.config.show_area !== false && item.area) parts.push(html`<span><b>${t('area')}:</b> ${item.area}</span>`);
-    if (this.config.show_type !== false && item.event) parts.push(html`<span><b>${t('type')}:</b> ${item.event}</span>`);
-    if (this.config.show_level !== false && item.level) parts.push(html`<span><b>${t('level')}:</b> ${item.level}</span>`);
-    if (this.config.show_severity !== false && item.severity) parts.push(html`<span><b>${t('severity')}:</b> ${item.severity}</span>`);
-    if (this.config.show_published !== false && item.published) parts.push(html`<span><b>${t('published')}:</b> ${this._fmtTs(item.published)}</span>`);
-    if (this.config.show_period !== false && (item.start || item.end))
-      parts.push(html`<span><b>${t('period')}:</b> ${this._fmtTs(item.start)} – ${this._fmtEnd(item.end)}</span>`);
-    if (this.config.show_description !== false && item.descr) {
-      // Avoid duplicating description if used as title
-      const titleText = item.descr || '';
-      if (titleText && titleText !== (item.descr || '')) {
-        parts.push(html`<span><b>${t('description_short')}:</b> ${item.descr}</span>`);
-      }
-    }
+    const metaFields = {
+      area: (this.config.show_area !== false && item.area)
+        ? html`<span><b>${t('area')}:</b> ${item.area}</span>`
+        : null,
+      type: (this.config.show_type !== false && item.event)
+        ? html`<span><b>${t('type')}:</b> ${item.event}</span>`
+        : null,
+      level: (this.config.show_level !== false && item.level)
+        ? html`<span><b>${t('level')}:</b> ${item.level}</span>`
+        : null,
+      severity: (this.config.show_severity !== false && item.severity)
+        ? html`<span><b>${t('severity')}:</b> ${item.severity}</span>`
+        : null,
+      published: (this.config.show_published !== false && item.published)
+        ? html`<span><b>${t('published')}:</b> ${this._fmtTs(item.published)}</span>`
+        : null,
+      period: (this.config.show_period !== false && (item.start || item.end))
+        ? html`<span><b>${t('period')}:</b> ${this._fmtTs(item.start)} – ${this._fmtEnd(item.end)}</span>`
+        : null,
+      text: (this.config.show_text !== false && this._detailsText(item))
+        ? (() => {
+            const textContent = this._normalizeMultiline(this._detailsText(item));
+            return html`<div class="md-text">${textContent}</div>`;
+          })()
+        : null,
+    };
+    // Build ordered meta with optional divider and collapsible section
+    const defaultOrder = ['area','type','level','severity','published','period','divider','text'];
+    const rawOrder = Array.isArray(this.config.meta_order) && this.config.meta_order.length
+      ? this.config.meta_order
+      : defaultOrder;
+    // Ensure divider and text exist in order exactly once
+    let order = rawOrder.filter((k, i) => rawOrder.indexOf(k) === i);
+    if (!order.includes('divider')) order = [...order, 'divider'];
+    if (!order.includes('text')) order = [...order, 'text'];
+
+    const dividerIndex = order.indexOf('divider');
+    const inlineKeys = dividerIndex >= 0 ? order.slice(0, dividerIndex) : order.filter((k) => k !== 'divider');
+    const detailsKeys = dividerIndex >= 0 ? order.slice(dividerIndex + 1) : [];
+
+    const inlineParts = inlineKeys
+      .filter((k) => k !== 'text')
+      .map((key) => metaFields[key])
+      .filter((node) => !!node);
+
+    const inlineTextBlock = inlineKeys.includes('text') ? metaFields.text : null;
+
+    const detailsParts = detailsKeys
+      .filter((k) => k !== 'text')
+      .map((key) => metaFields[key])
+      .filter((node) => !!node);
+    const detailsTextBlock = detailsKeys.includes('text') ? metaFields.text : null;
+
+    // Default expansion: keep details collapsed unless user expands
+    const key = this._alertKey(item, idx);
+    const hasStored = Object.prototype.hasOwnProperty.call(this._expanded || {}, key);
+    let expanded = hasStored ? !!this._expanded[key] : false;
+    // no auto-expand
 
     return html`
       <div
@@ -274,22 +362,62 @@ class SmhiAlertCard extends LitElement {
           <div class="title">
             <div class="district">${item.descr || item.area || item.event || ''}</div>
           </div>
-          ${parts.length > 0 ? html`<div class="meta">${parts}</div>` : html``}
-          ${this.config.show_details !== false && item.details
+          ${inlineParts.length > 0 ? html`<div class="meta">${inlineParts}</div>` : html``}
+          ${inlineTextBlock ? html`<div class="details">${inlineTextBlock}</div>` : html``}
+          ${(detailsParts.length > 0 || detailsTextBlock)
             ? html`
                 <div class="details">
-                  <div class="details-toggle" @click=${(e) => this._toggleDetails(e, item, idx)}>
+                  <div
+                    class="details-toggle"
+                    @click=${(e) => this._toggleDetails(e, item, idx)}
+                    @pointerdown=${(e) => e.stopPropagation()}
+                    @pointerup=${(e) => e.stopPropagation()}
+                    @keydown=${(e) => e.stopPropagation()}
+                  >
                     ${expanded ? t('hide_details') : t('show_details')}
                   </div>
-                  ${expanded
-                    ? html`<ha-markdown breaks .content=${String(item.details || '')}></ha-markdown>`
-                    : html``}
+                  ${expanded ? html`
+                    ${detailsParts.length > 0 ? html`<div class="meta">${detailsParts}</div>` : html``}
+                    ${detailsTextBlock ? html`${detailsTextBlock}` : html``}
+                  ` : html``}
                 </div>
               `
             : html``}
         </div>
         <div></div>
       </div>`;
+  }
+
+  _detailsText(item) {
+    // Prefer details; fall back to descr; ensure string
+    const primary = item?.details;
+    const fallback = item?.descr;
+    const text = (primary && String(primary).trim().length > 0)
+      ? String(primary)
+      : (fallback && String(fallback).trim().length > 0)
+        ? String(fallback)
+        : '';
+    return text || '';
+  }
+
+  _normalizeMultiline(value) {
+    if (!value) return '';
+    let text = String(value).replace(/\r\n?/g, '\n');
+    // Trim leading/trailing empty lines
+    text = text.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+    const lines = text.split('\n');
+    // Determine common leading indent among non-empty lines, preferring positive indents.
+    // This avoids the first unindented heading line forcing minIndent to 0
+    const indents = lines
+      .filter((ln) => ln.trim().length > 0)
+      .map((ln) => {
+        const m = ln.match(/^(\s*)/);
+        return m ? m[1].length : 0;
+      });
+    const positive = indents.filter((n) => n > 0);
+    const minIndent = positive.length > 0 ? Math.min(...positive) : (indents.length > 0 ? Math.min(...indents) : 0);
+    const deindented = lines.map((ln) => (minIndent > 0 && ln.startsWith(' '.repeat(minIndent)) ? ln.slice(minIndent) : ln));
+    return deindented.join('\n');
   }
 
   _toggleDetails(e, item, idx) {
@@ -354,7 +482,8 @@ class SmhiAlertCard extends LitElement {
   }
 
   _fmtEnd(end) {
-    if (!end || String(end).toLowerCase() === 'okänt') return this._t('unknown');
+    const val = String(end || '').trim().toLowerCase();
+    if (!end || val === 'okänt' || val === 'unknown') return this._t('unknown');
     return this._fmtTs(end);
   }
 
@@ -365,10 +494,14 @@ class SmhiAlertCard extends LitElement {
   shouldUpdate(changed) {
     if (changed.has('config')) return true;
     if (changed.has('hass')) {
-      const messages = this._messages();
-      const key = JSON.stringify(messages?.map((m) => [m.code, m.area, m.start, m.published]));
-      if (this._lastKey !== key) {
-        this._lastKey = key;
+      const stateObj = this.hass.states?.[this.config.entity];
+      const lastUpdate = String(stateObj?.attributes?.last_update || '');
+      const messages = stateObj?.attributes?.messages || [];
+      // Include details/descr to re-render when description text changes
+      const msgKey = JSON.stringify(messages?.map((m) => [m.code, m.area, m.start, m.published, m.details, m.descr]));
+      const combinedKey = `${lastUpdate}|${msgKey}`;
+      if (this._lastKey !== combinedKey) {
+        this._lastKey = combinedKey;
         return true;
       }
       return false;
@@ -387,6 +520,7 @@ class SmhiAlertCard extends LitElement {
         severity: 'Severity',
         published: 'Published',
         period: 'Period',
+        // description_short kept for backward compat but unused
         description_short: 'Descr',
         show_details: 'Show details',
         hide_details: 'Hide details',
@@ -400,6 +534,7 @@ class SmhiAlertCard extends LitElement {
         severity: 'Allvarlighetsgrad',
         published: 'Publicerad',
         period: 'Period',
+        // description_short kept for backward compat but unused
         description_short: 'Beskrivning',
         show_details: 'Visa detaljer',
         hide_details: 'Dölj detaljer',
@@ -412,8 +547,8 @@ class SmhiAlertCard extends LitElement {
   _normalizeConfig(config) {
     const normalized = { ...config };
     // Backwards compatibility mappings
-    if (normalized.show_descr !== undefined && normalized.show_description === undefined) {
-      normalized.show_description = normalized.show_descr;
+    if (normalized.show_text === undefined && normalized.show_details !== undefined) {
+      normalized.show_text = normalized.show_details;
     }
     // Defaults
     if (normalized.show_header === undefined) normalized.show_header = true;
@@ -423,16 +558,24 @@ class SmhiAlertCard extends LitElement {
     if (normalized.show_severity === undefined) normalized.show_severity = true;
     if (normalized.show_published === undefined) normalized.show_published = true;
     if (normalized.show_period === undefined) normalized.show_period = true;
-    if (normalized.show_description === undefined) normalized.show_description = true;
-    if (normalized.show_details === undefined) normalized.show_details = true;
+    if (normalized.show_text === undefined) normalized.show_text = true;
     if (normalized.show_icon === undefined) normalized.show_icon = true;
     if (normalized.hide_when_empty === undefined) normalized.hide_when_empty = false;
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
     if (normalized.group_by === undefined) normalized.group_by = 'none';
+    if (!Array.isArray(normalized.meta_order) || normalized.meta_order.length === 0) {
+      // Default to placing text in the details section (after divider)
+      normalized.meta_order = ['area','type','level','severity','published','period','divider','text'];
+    } else {
+      // Ensure divider and text exist
+      if (!normalized.meta_order.includes('divider')) normalized.meta_order = [...normalized.meta_order, 'divider'];
+      if (!normalized.meta_order.includes('text')) normalized.meta_order = [...normalized.meta_order, 'text'];
+    }
     if (!Array.isArray(normalized.filter_severities)) normalized.filter_severities = [];
     if (!Array.isArray(normalized.filter_areas)) normalized.filter_areas = [];
-    if (normalized.collapse_details === undefined) normalized.collapse_details = true;
+    // collapse_details is no longer used; collapse is inferred by divider position
+    delete normalized.collapse_details;
     if (normalized.show_border === undefined) normalized.show_border = true; // kept for compat but unused
     return normalized;
   }
@@ -453,15 +596,15 @@ class SmhiAlertCard extends LitElement {
       show_severity: true,
       show_published: true,
       show_period: true,
-      show_description: true,
-      show_details: true,
+      show_text: true,
       hide_when_empty: true,
       max_items: 0,
       sort_order: 'severity_then_time',
       group_by: 'none',
       filter_severities: [],
       filter_areas: [],
-      collapse_details: true,
+      // collapse inferred by divider; default puts text in details (after divider)
+      meta_order: ['area','type','level','severity','published','period','divider','text'],
     };
   }
 }
@@ -477,9 +620,11 @@ class SmhiAlertCardEditor extends LitElement {
   };
 
   static styles = css`
-    .container {
-      padding: 8px 0 0 0;
-    }
+    .container { padding: 8px 0 0 0; }
+    .meta-fields { margin: 12px 0; padding: 8px 12px; }
+    .meta-fields-title { color: var(--secondary-text-color); margin-bottom: 6px; }
+    .meta-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 6px 0; }
+    .order-actions { display: flex; gap: 6px; }
   `;
 
   setConfig(config) {
@@ -505,6 +650,9 @@ class SmhiAlertCardEditor extends LitElement {
       { name: 'group_by', label: 'Group by', selector: { select: { mode: 'dropdown', options: [
         { value: 'none', label: 'No grouping' },
         { value: 'area', label: 'By area' },
+        { value: 'type', label: 'By type' },
+        { value: 'level', label: 'By level' },
+        { value: 'severity', label: 'By severity' },
       ] } } },
       { name: 'filter_severities', label: 'Filter severities', selector: { select: { multiple: true, options: [
         { value: 'RED', label: 'RED' },
@@ -513,15 +661,7 @@ class SmhiAlertCardEditor extends LitElement {
         { value: 'MESSAGE', label: 'MESSAGE' },
       ] } } },
       { name: 'filter_areas', label: 'Filter areas (comma-separated)', selector: { text: {} } },
-      { name: 'collapse_details', label: 'Collapse details', selector: { boolean: {} } },
-      { name: 'show_area', label: 'Show area (in meta)', selector: { boolean: {} } },
-      { name: 'show_type', label: 'Show type', selector: { boolean: {} } },
-      { name: 'show_level', label: 'Show level', selector: { boolean: {} } },
-      { name: 'show_severity', label: 'Show severity', selector: { boolean: {} } },
-      { name: 'show_published', label: 'Show published', selector: { boolean: {} } },
-      { name: 'show_period', label: 'Show period', selector: { boolean: {} } },
-      { name: 'show_description', label: 'Show description', selector: { boolean: {} } },
-      { name: 'show_details', label: 'Show details', selector: { boolean: {} } },
+      // No explicit collapse or show_text; details are inferred by divider & per-meta toggles
       // actions (use ui_action selector for full UI in editor)
       { name: 'tap_action', label: 'Tap action', selector: { ui_action: {} } },
       { name: 'double_tap_action', label: 'Double tap action', selector: { ui_action: {} } },
@@ -539,26 +679,83 @@ class SmhiAlertCardEditor extends LitElement {
       group_by: this._config.group_by || 'none',
       filter_severities: this._config.filter_severities || [],
       filter_areas: (this._config.filter_areas || []).join(', '),
-      collapse_details: this._config.collapse_details !== undefined ? this._config.collapse_details : true,
+      // collapse inferred by divider
       show_area: this._config.show_area !== undefined ? this._config.show_area : true,
       show_type: this._config.show_type !== undefined ? this._config.show_type : true,
       show_level: this._config.show_level !== undefined ? this._config.show_level : true,
       show_severity: this._config.show_severity !== undefined ? this._config.show_severity : true,
       show_published: this._config.show_published !== undefined ? this._config.show_published : true,
       show_period: this._config.show_period !== undefined ? this._config.show_period : true,
-      show_description: this._config.show_description !== undefined ? this._config.show_description : true,
-      show_details: this._config.show_details !== undefined ? this._config.show_details : true,
+      show_text: this._config.show_text !== undefined ? this._config.show_text : (this._config.show_details !== undefined ? this._config.show_details : true),
       tap_action: this._config.tap_action || {},
       double_tap_action: this._config.double_tap_action || {},
       hold_action: this._config.hold_action || {},
     };
+
+    const allowed = ['area','type','level','severity','published','period'];
+    const special = ['divider','text'];
+    const allowedWithSpecial = [...allowed, ...special];
+    const currentOrderRaw = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
+      ? this._config.meta_order.filter((k) => allowedWithSpecial.includes(k))
+      : ['area','type','level','severity','published','period','divider','text'];
+    // ensure presence
+    let currentOrder = [...currentOrderRaw];
+    if (!currentOrder.includes('divider')) currentOrder.push('divider');
+    if (!currentOrder.includes('text')) currentOrder.push('text');
+    const filledOrder = [...currentOrder, ...allowedWithSpecial.filter((k) => !currentOrder.includes(k))];
+
+    const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
+    const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
 
     return html`
       <div class="container">
         <ha-form
           .hass=${this.hass}
           .data=${data}
-          .schema=${schema}
+          .schema=${schemaTop}
+          .computeLabel=${this._computeLabel}
+          @value-changed=${this._valueChanged}
+        ></ha-form>
+        <div class="meta-fields">
+          ${filledOrder.map((key, index) => {
+            if (key === 'divider') {
+              return html`
+                <ha-settings-row class="meta-divider-row">
+                  <span slot="heading">Details divider</span>
+                  <div class="order-actions">
+                    <mwc-icon-button @click=${() => this._moveMeta(key, -1)} .disabled=${index === 0} aria-label="Move up">
+                      <ha-icon icon="mdi:chevron-up"></ha-icon>
+                    </mwc-icon-button>
+                    <mwc-icon-button @click=${() => this._moveMeta(key, 1)} .disabled=${index === filledOrder.length - 1} aria-label="Move down">
+                      <ha-icon icon="mdi:chevron-down"></ha-icon>
+                    </mwc-icon-button>
+                  </div>
+                </ha-settings-row>
+              `;
+            }
+            return html`
+              <ha-settings-row class="meta-row">
+                <span slot="heading">${this._labelForMeta(key)}</span>
+                <span slot="description"></span>
+                <div class="order-actions">
+                  <mwc-icon-button @click=${() => this._moveMeta(key, -1)} .disabled=${index === 0} aria-label="Move up">
+                    <ha-icon icon="mdi:chevron-up"></ha-icon>
+                  </mwc-icon-button>
+                  <mwc-icon-button @click=${() => this._moveMeta(key, 1)} .disabled=${index === filledOrder.length - 1} aria-label="Move down">
+                    <ha-icon icon="mdi:chevron-down"></ha-icon>
+                  </mwc-icon-button>
+                </div>
+                <ha-switch
+                  .checked=${this._isMetaShown(key)}
+                  @change=${(e) => this._toggleMeta(key, e)}
+                ></ha-switch>
+              </ha-settings-row>`;
+          })}
+        </div>
+        <ha-form
+          .hass=${this.hass}
+          .data=${data}
+          .schema=${schemaActions}
           .computeLabel=${this._computeLabel}
           @value-changed=${this._valueChanged}
         ></ha-form>
@@ -581,6 +778,65 @@ class SmhiAlertCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next } }));
   };
 
+  _isMetaShown(key) {
+    if (key === 'area') return this._config.show_area !== false;
+    if (key === 'type') return this._config.show_type !== false;
+    if (key === 'level') return this._config.show_level !== false;
+    if (key === 'severity') return this._config.show_severity !== false;
+    if (key === 'published') return this._config.show_published !== false;
+    if (key === 'period') return this._config.show_period !== false;
+    if (key === 'text') return this._config.show_text !== false;
+    if (key === 'divider') return true;
+    return true;
+  }
+
+  _toggleMeta(key, ev) {
+    const on = ev?.target?.checked ?? true;
+    let next = { ...this._config };
+    if (key === 'area') next.show_area = on;
+    else if (key === 'type') next.show_type = on;
+    else if (key === 'level') next.show_level = on;
+    else if (key === 'severity') next.show_severity = on;
+    else if (key === 'published') next.show_published = on;
+    else if (key === 'period') next.show_period = on;
+    else if (key === 'text') next.show_text = on;
+    this._config = next;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next } }));
+  }
+
+  _moveMeta(key, delta) {
+    // Normalize to the same order the UI renders (includes 'divider' and 'text' and all allowed keys),
+    // so moving across the divider is always possible and saved back stably.
+    const baseKeys = ['area','type','level','severity','published','period'];
+    const specialKeys = ['divider','text'];
+    const allKeys = [...baseKeys, ...specialKeys];
+    const raw = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
+      ? this._config.meta_order.filter((k) => allKeys.includes(k))
+      : [...allKeys];
+    // Deduplicate while preserving first occurrence
+    let current = raw.filter((k, i) => raw.indexOf(k) === i);
+    // Ensure presence of divider/text
+    if (!current.includes('divider')) current.push('divider');
+    if (!current.includes('text')) current.push('text');
+    // Ensure all allowed keys are present so their relative order is explicit
+    const filled = [...current, ...allKeys.filter((k) => !current.includes(k))];
+
+    const idx = filled.indexOf(key);
+    if (idx < 0) return;
+    const newIdx = Math.max(0, Math.min(filled.length - 1, idx + delta));
+    if (newIdx === idx) return;
+    const next = [...filled];
+    next.splice(idx, 1);
+    next.splice(newIdx, 0, key);
+    this._config = { ...this._config, meta_order: next };
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
+  }
+
+  _labelForMeta(key) {
+    const map = { area: 'Area', type: 'Type', level: 'Level', severity: 'Severity', published: 'Published', period: 'Period', text: 'Text', divider: '— Details —' };
+    return map[key] || key;
+  }
+
   _computeLabel = (schema) => {
     const labels = {
       entity: 'Entity',
@@ -593,14 +849,14 @@ class SmhiAlertCardEditor extends LitElement {
       group_by: 'Group by',
       filter_severities: 'Filter severities',
       filter_areas: 'Filter areas (comma-separated)',
-      collapse_details: 'Collapse details',
+       // collapse_details removed
+      show_area: 'Show area',
       show_type: 'Show type',
       show_level: 'Show level',
       show_severity: 'Show severity',
       show_published: 'Show published',
       show_period: 'Show period',
-      show_description: 'Show description',
-      show_details: 'Show details',
+       // show_text is controlled as a meta toggle, not a top-level control
       tap_action: 'Tap action',
       double_tap_action: 'Double tap action',
       hold_action: 'Hold action',
