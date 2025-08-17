@@ -805,15 +805,27 @@ class SmhiAlertCardEditor extends LitElement {
   }
 
   _moveMeta(key, delta) {
-    const allowed = ['area','type','level','severity','published','period','divider','text'];
-    const order = (this._config.meta_order && Array.isArray(this._config.meta_order))
-      ? this._config.meta_order.filter((k) => allowed.includes(k))
-      : ['area','type','level','severity','published','period','divider','text'];
-    const idx = order.indexOf(key);
+    // Normalize to the same order the UI renders (includes 'divider' and 'text' and all allowed keys),
+    // so moving across the divider is always possible and saved back stably.
+    const baseKeys = ['area','type','level','severity','published','period'];
+    const specialKeys = ['divider','text'];
+    const allKeys = [...baseKeys, ...specialKeys];
+    const raw = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
+      ? this._config.meta_order.filter((k) => allKeys.includes(k))
+      : [...allKeys];
+    // Deduplicate while preserving first occurrence
+    let current = raw.filter((k, i) => raw.indexOf(k) === i);
+    // Ensure presence of divider/text
+    if (!current.includes('divider')) current.push('divider');
+    if (!current.includes('text')) current.push('text');
+    // Ensure all allowed keys are present so their relative order is explicit
+    const filled = [...current, ...allKeys.filter((k) => !current.includes(k))];
+
+    const idx = filled.indexOf(key);
     if (idx < 0) return;
-    const newIdx = Math.max(0, Math.min(order.length - 1, idx + delta));
+    const newIdx = Math.max(0, Math.min(filled.length - 1, idx + delta));
     if (newIdx === idx) return;
-    const next = [...order];
+    const next = [...filled];
     next.splice(idx, 1);
     next.splice(newIdx, 0, key);
     this._config = { ...this._config, meta_order: next };
