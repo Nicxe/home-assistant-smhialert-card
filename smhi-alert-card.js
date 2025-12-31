@@ -15,6 +15,12 @@ class SmhiAlertCard extends LitElement {
   };
 
   static styles = css`
+    :host {
+      /* Strength of the severity-tinted background when enabled (used in color-mix) */
+      --smhi-alert-bg-strong: 22%;
+      --smhi-alert-bg-soft: 12%;
+    }
+
     ha-card {
       padding: 8px 0;
       background: transparent;
@@ -45,6 +51,16 @@ class SmhiAlertCard extends LitElement {
       border: 1px solid var(--divider-color);
       background: var(--card-background-color);
       position: relative;
+    }
+
+    /* Optional severity-tinted background (keeps normal card background as base) */
+    .alert.bg-severity {
+      background: linear-gradient(
+          90deg,
+          color-mix(in srgb, var(--smhi-accent) var(--smhi-alert-bg-strong, 22%), var(--card-background-color)) 0%,
+          color-mix(in srgb, var(--smhi-accent) var(--smhi-alert-bg-soft, 12%), var(--card-background-color)) 55%,
+          var(--card-background-color) 100%
+        );
     }
     .alert::before {
       content: '';
@@ -287,6 +303,7 @@ class SmhiAlertCard extends LitElement {
     const code = String(item.code || '').toUpperCase();
     const sevClass =
       code === 'RED' ? 'sev-red' : code === 'ORANGE' ? 'sev-orange' : code === 'YELLOW' ? 'sev-yellow' : 'sev-message';
+    const sevBgClass = this.config?.severity_background ? 'bg-severity' : '';
     const showIcon = this.config.show_icon !== false;
     const metaFields = {
       area: (this.config.show_area !== false && item.area)
@@ -349,7 +366,7 @@ class SmhiAlertCard extends LitElement {
 
     return html`
       <div
-        class="alert ${sevClass}"
+        class="alert ${sevClass} ${sevBgClass}"
         role="button"
         tabindex="0"
         aria-label="${item.area || ''}"
@@ -560,6 +577,7 @@ class SmhiAlertCard extends LitElement {
     if (normalized.show_period === undefined) normalized.show_period = true;
     if (normalized.show_text === undefined) normalized.show_text = true;
     if (normalized.show_icon === undefined) normalized.show_icon = true;
+    if (normalized.severity_background === undefined) normalized.severity_background = false;
     if (normalized.hide_when_empty === undefined) normalized.hide_when_empty = false;
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
@@ -590,6 +608,7 @@ class SmhiAlertCard extends LitElement {
       title: '',
       show_header: true,
       show_icon: true,
+      severity_background: false,
       show_area: true,
       show_type: true,
       show_level: true,
@@ -638,6 +657,7 @@ class SmhiAlertCardEditor extends LitElement {
       { name: 'title', label: 'Title', selector: { text: {} } },
       { name: 'show_header', label: 'Show header', selector: { boolean: {} } },
       { name: 'show_icon', label: 'Show icon', selector: { boolean: {} } },
+      { name: 'severity_background', label: 'Severity background', selector: { boolean: {} } },
       { name: 'hide_when_empty', label: 'Hide when empty', selector: { boolean: {} } },
       { name: 'max_items', label: 'Max items', selector: { number: { min: 0, mode: 'box' } } },
       {
@@ -673,6 +693,7 @@ class SmhiAlertCardEditor extends LitElement {
       title: this._config.title || '',
       show_header: this._config.show_header !== undefined ? this._config.show_header : true,
       show_icon: this._config.show_icon !== undefined ? this._config.show_icon : true,
+      severity_background: this._config.severity_background !== undefined ? this._config.severity_background : false,
       hide_when_empty: this._config.hide_when_empty !== undefined ? this._config.hide_when_empty : true,
       max_items: this._config.max_items ?? 0,
       sort_order: this._config.sort_order || 'severity_then_time',
@@ -843,6 +864,7 @@ class SmhiAlertCardEditor extends LitElement {
       title: 'Title',
       show_header: 'Show header',
       show_icon: 'Show icon',
+      severity_background: 'Severity background',
       hide_when_empty: 'Hide when empty',
       max_items: 'Max items',
       sort_order: 'Sort order',
