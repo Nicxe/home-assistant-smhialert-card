@@ -19,6 +19,9 @@ class SmhiAlertCard extends LitElement {
       /* Strength of the severity-tinted background when enabled (used in color-mix) */
       --smhi-alert-bg-strong: 22%;
       --smhi-alert-bg-soft: 12%;
+      /* Optical vertical adjustment for the title in compact (1-row) mode */
+      --smhi-alert-compact-title-offset: 2px;
+      display: block;
     }
 
     ha-card {
@@ -52,6 +55,10 @@ class SmhiAlertCard extends LitElement {
       background: var(--card-background-color);
       position: relative;
     }
+    /* Compact (single-line) layout: vertically center the whole row */
+    .alert.compact {
+      align-items: center;
+    }
 
     /* Optional severity-tinted background (keeps normal card background as base) */
     .alert.bg-severity {
@@ -84,11 +91,26 @@ class SmhiAlertCard extends LitElement {
       margin-inline-start: 4px;
       margin-top: 2px;
     }
+    .icon-col {
+      display: flex;
+      align-items: flex-start;
+    }
+    .icon-col.compact {
+      align-items: center;
+    }
     .content {
       display: flex;
       flex-direction: column;
       gap: 4px;
       min-width: 0;
+    }
+    /* Allow the content column to fill the alert height in normal (multi-line) layout */
+    .content {
+      align-self: stretch;
+    }
+    /* In compact layout, don't stretch the content; let the grid center it precisely */
+    .content.compact {
+      align-self: center;
     }
     .title {
       display: flex;
@@ -101,6 +123,11 @@ class SmhiAlertCard extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    /* In compact mode, apply a tiny optical offset so the text looks centered */
+    .district.compact {
+      transform: translateY(var(--smhi-alert-compact-title-offset, 1px));
+      line-height: 1;
     }
     .meta {
       color: var(--secondary-text-color);
@@ -126,6 +153,23 @@ class SmhiAlertCard extends LitElement {
       user-select: none;
       font-size: 0.95em;
       margin-bottom: 6px;
+    }
+    .toggle-col {
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-start;
+      padding-top: 2px;
+      padding-right: 2px;
+    }
+    .toggle-col.compact {
+      align-items: center;
+      padding-top: 0;
+    }
+    /* Compact toggle when placed in the right column (prevents it from consuming an extra line) */
+    .details-toggle.compact {
+      margin: 0;
+      font-size: 0.9em;
+      white-space: nowrap;
     }
     /* Ensure consistent spacing when details are expanded */
     .details .meta + .md-text { margin-top: 6px; }
@@ -158,6 +202,21 @@ class SmhiAlertCard extends LitElement {
     if (this.config?.hide_when_empty && (!messages || messages.length === 0)) return 0;
     const header = this._showHeader() ? 1 : 0;
     return header + (messages ? messages.length : 0);
+  }
+
+  /**
+   * Sections (grid) view support.
+   * Home Assistant uses this to determine the default/min size and to enable the UI "Layout" tab resizing.
+   * Each section is 12 columns wide.
+   */
+  getGridOptions() {
+    // Provide only column sizing. Avoid returning `rows` here so Sections can auto-size height
+    // based on content (prevents fixed-height behavior and overlap issues when expanding).
+    return {
+      columns: 12,
+      min_columns: 1,
+      max_columns: 12,
+    };
   }
 
   _messages() {
@@ -363,10 +422,12 @@ class SmhiAlertCard extends LitElement {
     const hasStored = Object.prototype.hasOwnProperty.call(this._expanded || {}, key);
     let expanded = hasStored ? !!this._expanded[key] : false;
     // no auto-expand
+    const expandable = (detailsParts.length > 0 || !!detailsTextBlock);
+    const isCompact = !expanded && inlineParts.length === 0 && !inlineTextBlock;
 
     return html`
       <div
-        class="alert ${sevClass} ${sevBgClass}"
+        class="alert ${sevClass} ${sevBgClass} ${isCompact ? 'compact' : ''}"
         role="button"
         tabindex="0"
         aria-label="${item.area || ''}"
@@ -374,25 +435,16 @@ class SmhiAlertCard extends LitElement {
         @pointerup=${(e) => this._onPointerUp(e, item)}
         @keydown=${(e) => this._onKeydown(e, item)}
       >
-        ${showIcon ? html`<div>${this._iconTemplate(item)}</div>` : html``}
-        <div class="content">
+        ${showIcon ? html`<div class="icon-col ${isCompact ? 'compact' : ''}">${this._iconTemplate(item)}</div>` : html``}
+        <div class="content ${isCompact ? 'compact' : ''}">
           <div class="title">
-            <div class="district">${item.descr || item.area || item.event || ''}</div>
+            <div class="district ${isCompact ? 'compact' : ''}">${item.descr || item.area || item.event || ''}</div>
           </div>
           ${inlineParts.length > 0 ? html`<div class="meta">${inlineParts}</div>` : html``}
           ${inlineTextBlock ? html`<div class="details">${inlineTextBlock}</div>` : html``}
-          ${(detailsParts.length > 0 || detailsTextBlock)
+          ${expandable
             ? html`
                 <div class="details">
-                  <div
-                    class="details-toggle"
-                    @click=${(e) => this._toggleDetails(e, item, idx)}
-                    @pointerdown=${(e) => e.stopPropagation()}
-                    @pointerup=${(e) => e.stopPropagation()}
-                    @keydown=${(e) => e.stopPropagation()}
-                  >
-                    ${expanded ? t('hide_details') : t('show_details')}
-                  </div>
                   ${expanded ? html`
                     ${detailsParts.length > 0 ? html`<div class="meta">${detailsParts}</div>` : html``}
                     ${detailsTextBlock ? html`${detailsTextBlock}` : html``}
@@ -401,7 +453,28 @@ class SmhiAlertCard extends LitElement {
               `
             : html``}
         </div>
-        <div></div>
+        ${expandable ? html`
+          <div class="toggle-col ${isCompact ? 'compact' : ''}">
+            <div
+              class="details-toggle compact"
+              role="button"
+              tabindex="0"
+              title="${expanded ? t('hide_details') : t('show_details')}"
+              @click=${(e) => this._toggleDetails(e, item, idx)}
+              @pointerdown=${(e) => e.stopPropagation()}
+              @pointerup=${(e) => e.stopPropagation()}
+              @keydown=${(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  this._toggleDetails(e, item, idx);
+                }
+                e.stopPropagation();
+              }}
+            >
+              ${expanded ? t('hide_details') : t('show_details')}
+            </div>
+          </div>
+        ` : html`<div></div>`}
       </div>`;
   }
 
