@@ -94,5 +94,6 @@ double_tap_action:
 
 ## Usage Screenshots
 
-<img width="482" height="520" alt="smhi_alert_screenshoot" src="https://github.com/user-attachments/assets/43aa66b1-1895-41b9-b919-f667154f140f" />
+<img width="588" height="795" alt="smhi_alert_card" src="https://github.com/user-attachments/assets/9754a580-57d2-4341-9e1b-fdf9e01a6bd2" />
+
 
