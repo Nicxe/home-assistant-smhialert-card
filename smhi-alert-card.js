@@ -7,6 +7,10 @@ const yellowWarningIcon = new URL('./yellowWarning.svg', import.meta.url).href;
 const orangeWarningIcon = new URL('./orangeWarning.svg', import.meta.url).href;
 const redWarningIcon = new URL('./redWarning.svg', import.meta.url).href;
 
+const LEAFLET_CSS_HREF = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+const LEAFLET_JS_SRC = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const LEAFLET_ESM_URL = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js';
+
 class SmhiAlertCard extends LitElement {
   static properties = {
     hass: {},
@@ -21,11 +25,14 @@ class SmhiAlertCard extends LitElement {
       --smhi-alert-bg-soft: 12%;
       /* Optical vertical adjustment for the title in compact (1-row) mode */
       --smhi-alert-compact-title-offset: 2px;
+      /* Outer horizontal padding for the list (set to 0 to align with other cards) */
+      --smhi-alert-outer-padding: 0px;
       display: block;
     }
 
     ha-card {
-      padding: 8px 0;
+      /* Keep the container tight so stacking multiple transparent cards doesn't show "gaps" */
+      padding: 0;
       background: transparent;
       box-shadow: none;
       border: none;
@@ -37,7 +44,8 @@ class SmhiAlertCard extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      padding: 0 12px 12px 12px;
+      /* No vertical padding: otherwise it becomes visible whitespace between stacked cards */
+      padding: 0 var(--smhi-alert-outer-padding, 0px);
     }
     .area-group {
       display: flex;
@@ -173,9 +181,54 @@ class SmhiAlertCard extends LitElement {
     }
     /* Ensure consistent spacing when details are expanded */
     .details .meta + .md-text { margin-top: 6px; }
+
+    /* Optional minimap (Leaflet) */
+    .map-wrap {
+      margin-top: 10px;
+      border-radius: var(--smhi-alert-border-radius, 8px);
+      overflow: hidden;
+      border: 1px solid var(--divider-color);
+      background: var(--card-background-color);
+      position: relative;
+    }
+    .geo-map {
+      width: 100%;
+      height: var(--smhi-alert-map-height, 170px);
+    }
+    .map-status {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9em;
+      color: var(--secondary-text-color);
+      background: color-mix(in srgb, var(--card-background-color) 85%, transparent);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+    .map-status.show {
+      opacity: 1;
+    }
+    /* Leaflet controls: allow zoom buttons, hide attribution to keep the card clean */
+    .geo-map .leaflet-control-attribution { display: none; }
+    .geo-map .leaflet-control-zoom {
+      box-shadow: none;
+      border: 1px solid var(--divider-color);
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 8px;
+    }
+    .geo-map .leaflet-control-zoom a {
+      background: color-mix(in srgb, var(--card-background-color) 92%, transparent);
+      color: var(--primary-text-color);
+      border-bottom: 1px solid var(--divider-color);
+    }
+    .geo-map .leaflet-control-zoom a:last-child { border-bottom: none; }
     .empty {
       color: var(--secondary-text-color);
-      padding: 8px 12px 12px 12px;
+      padding: 8px var(--smhi-alert-outer-padding, 0px);
     }
 
     /* Editor-only controls */
@@ -188,6 +241,11 @@ class SmhiAlertCard extends LitElement {
     .meta-divider { border-top: 1px dashed var(--divider-color); height: 0; }
   `;
 
+  constructor() {
+    super();
+    this._maps = new Map();
+  }
+
   setConfig(config) {
     if (!config.entity) {
       throw new Error('You must specify an entity.');
@@ -198,10 +256,17 @@ class SmhiAlertCard extends LitElement {
   }
 
   getCardSize() {
-    const messages = this._visibleMessages();
-    if (this.config?.hide_when_empty && (!messages || messages.length === 0)) return 0;
     const header = this._showHeader() ? 1 : 0;
-    return header + (messages ? messages.length : 0);
+
+    // Important: HA may call getCardSize() before hass is injected.
+    // If we return 0 here, Lovelace can drop the card entirely from the editor UI.
+    if (!this.hass) return header + 1;
+
+    const messages = this._visibleMessages();
+    const count = Array.isArray(messages) ? messages.length : 0;
+
+    // When empty (including in editor), reserve at least one row for the empty state.
+    return header + (count > 0 ? count : 1);
   }
 
   /**
@@ -216,6 +281,9 @@ class SmhiAlertCard extends LitElement {
       columns: 12,
       min_columns: 1,
       max_columns: 12,
+      // In edit mode + empty state, HA Sections can collapse cards to 0 height unless a min is provided.
+      // This keeps the card selectable/movable even when there is no data.
+      min_rows: 1,
     };
   }
 
@@ -303,16 +371,18 @@ class SmhiAlertCard extends LitElement {
   render() {
     if (!this.hass || !this.config) return html``;
     const stateObj = this.hass.states?.[this.config.entity];
-    if (!stateObj) return html``;
     const t = this._t.bind(this);
     const messages = this._visibleMessages();
 
-    if (this.config.hide_when_empty && messages.length === 0) return html``;
+    const header = this._showHeader()
+      ? (this.config.title || stateObj?.attributes?.friendly_name || 'SMHI')
+      : undefined;
 
-    const header = this._showHeader() ? (this.config.title || stateObj.attributes?.friendly_name || 'SMHI') : undefined;
+    const mapHeight = Number(this.config?.map_height || 170);
+    const mapStyle = this.config?.show_map ? `--smhi-alert-map-height: ${mapHeight}px;` : '';
 
     return html`
-      <ha-card .header=${header}>
+      <ha-card .header=${header} style=${mapStyle}>
         ${messages.length === 0
           ? html`<div class="empty">${t('no_alerts')}</div>`
           : html`<div class="alerts">${this._renderGrouped(messages)}</div>`}
@@ -351,10 +421,25 @@ class SmhiAlertCard extends LitElement {
     }
     return keys.map((key) => html`
       <div class="area-group">
-        <div class="meta" style="margin: 0 12px;">${key}</div>
+        <div class="meta" style="margin: 0;">${key}</div>
         ${groups[key].map((item, idx) => this._renderAlert(item, idx))}
       </div>
     `);
+  }
+
+  _splitMetaOrder(rawOrder) {
+    const defaultOrder = ['area', 'type', 'level', 'severity', 'published', 'period', 'divider', 'text', 'map'];
+    const base = Array.isArray(rawOrder) && rawOrder.length ? rawOrder : defaultOrder;
+    // Deduplicate while preserving first occurrence
+    let order = base.map((k) => String(k)).filter((k, i, arr) => arr.indexOf(k) === i);
+    // Ensure required special keys exist
+    if (!order.includes('divider')) order = [...order, 'divider'];
+    if (!order.includes('text')) order = [...order, 'text'];
+    if (!order.includes('map')) order = [...order, 'map'];
+    const dividerIndex = order.indexOf('divider');
+    const inlineKeys = dividerIndex >= 0 ? order.slice(0, dividerIndex) : order.filter((k) => k !== 'divider');
+    const detailsKeys = dividerIndex >= 0 ? order.slice(dividerIndex + 1) : [];
+    return { order, inlineKeys, detailsKeys };
   }
 
   _renderAlert(item, idx) {
@@ -364,66 +449,135 @@ class SmhiAlertCard extends LitElement {
       code === 'RED' ? 'sev-red' : code === 'ORANGE' ? 'sev-orange' : code === 'YELLOW' ? 'sev-yellow' : 'sev-message';
     const sevBgClass = this.config?.severity_background ? 'bg-severity' : '';
     const showIcon = this.config.show_icon !== false;
-    const metaFields = {
-      area: (this.config.show_area !== false && item.area)
-        ? html`<span><b>${t('area')}:</b> ${item.area}</span>`
-        : null,
-      type: (this.config.show_type !== false && item.event)
-        ? html`<span><b>${t('type')}:</b> ${item.event}</span>`
-        : null,
-      level: (this.config.show_level !== false && item.level)
-        ? html`<span><b>${t('level')}:</b> ${item.level}</span>`
-        : null,
-      severity: (this.config.show_severity !== false && item.severity)
-        ? html`<span><b>${t('severity')}:</b> ${item.severity}</span>`
-        : null,
-      published: (this.config.show_published !== false && item.published)
-        ? html`<span><b>${t('published')}:</b> ${this._fmtTs(item.published)}</span>`
-        : null,
-      period: (this.config.show_period !== false && (item.start || item.end))
-        ? html`<span><b>${t('period')}:</b> ${this._fmtTs(item.start)} – ${this._fmtEnd(item.end)}</span>`
-        : null,
-      text: (this.config.show_text !== false && this._detailsText(item))
-        ? (() => {
-            const textContent = this._normalizeMultiline(this._detailsText(item));
-            return html`<div class="md-text">${textContent}</div>`;
-          })()
-        : null,
-    };
-    // Build ordered meta with optional divider and collapsible section
-    const defaultOrder = ['area','type','level','severity','published','period','divider','text'];
-    const rawOrder = Array.isArray(this.config.meta_order) && this.config.meta_order.length
-      ? this.config.meta_order
-      : defaultOrder;
-    // Ensure divider and text exist in order exactly once
-    let order = rawOrder.filter((k, i) => rawOrder.indexOf(k) === i);
-    if (!order.includes('divider')) order = [...order, 'divider'];
-    if (!order.includes('text')) order = [...order, 'text'];
-
-    const dividerIndex = order.indexOf('divider');
-    const inlineKeys = dividerIndex >= 0 ? order.slice(0, dividerIndex) : order.filter((k) => k !== 'divider');
-    const detailsKeys = dividerIndex >= 0 ? order.slice(dividerIndex + 1) : [];
-
-    const inlineParts = inlineKeys
-      .filter((k) => k !== 'text')
-      .map((key) => metaFields[key])
-      .filter((node) => !!node);
-
-    const inlineTextBlock = inlineKeys.includes('text') ? metaFields.text : null;
-
-    const detailsParts = detailsKeys
-      .filter((k) => k !== 'text')
-      .map((key) => metaFields[key])
-      .filter((node) => !!node);
-    const detailsTextBlock = detailsKeys.includes('text') ? metaFields.text : null;
+    const { inlineKeys, detailsKeys } = this._splitMetaOrder(this.config?.meta_order);
 
     // Default expansion: keep details collapsed unless user expands
-    const key = this._alertKey(item, idx);
-    const hasStored = Object.prototype.hasOwnProperty.call(this._expanded || {}, key);
-    let expanded = hasStored ? !!this._expanded[key] : false;
-    // no auto-expand
-    const expandable = (detailsParts.length > 0 || !!detailsTextBlock);
-    const isCompact = !expanded && inlineParts.length === 0 && !inlineTextBlock;
+    const alertKey = this._alertKey(item, idx);
+    const hasStored = Object.prototype.hasOwnProperty.call(this._expanded || {}, alertKey);
+    const expanded = hasStored ? !!this._expanded[alertKey] : false;
+
+    const mkTextBlock = () => {
+      if (this.config.show_text === false) return null;
+      const txt = this._detailsText(item);
+      if (!txt) return null;
+      const textContent = this._normalizeMultiline(txt);
+      return html`<div class="md-text">${textContent}</div>`;
+    };
+
+    const mkMapBlock = () => {
+      if (!this.config?.show_map) return null;
+      if (!item?.geometry) return null;
+      const mapId = `smhi-alert-map-${this._sanitizeDomId(alertKey)}`;
+      const statusId = `smhi-alert-map-status-${this._sanitizeDomId(alertKey)}`;
+      return html`
+        <div
+          class="map-wrap"
+          @pointerdown=${(e) => e.stopPropagation()}
+          @pointerup=${(e) => e.stopPropagation()}
+          @click=${(e) => e.stopPropagation()}
+        >
+          <div id=${statusId} class="map-status show">${t('map_loading')}</div>
+          <div
+            id=${mapId}
+            class="geo-map"
+            data-map-key=${alertKey}
+          ></div>
+        </div>
+      `;
+    };
+
+    const metaSpanFor = (key) => {
+      if (key === 'area') {
+        return (this.config.show_area !== false && item.area)
+          ? html`<span><b>${t('area')}:</b> ${item.area}</span>`
+          : null;
+      }
+      if (key === 'type') {
+        return (this.config.show_type !== false && item.event)
+          ? html`<span><b>${t('type')}:</b> ${item.event}</span>`
+          : null;
+      }
+      if (key === 'level') {
+        return (this.config.show_level !== false && item.level)
+          ? html`<span><b>${t('level')}:</b> ${item.level}</span>`
+          : null;
+      }
+      if (key === 'severity') {
+        return (this.config.show_severity !== false && item.severity)
+          ? html`<span><b>${t('severity')}:</b> ${item.severity}</span>`
+          : null;
+      }
+      if (key === 'published') {
+        return (this.config.show_published !== false && item.published)
+          ? html`<span><b>${t('published')}:</b> ${this._fmtTs(item.published)}</span>`
+          : null;
+      }
+      if (key === 'period') {
+        return (this.config.show_period !== false && (item.start || item.end))
+          ? html`<span><b>${t('period')}:</b> ${this._fmtTs(item.start)} – ${this._fmtEnd(item.end)}</span>`
+          : null;
+      }
+      return null;
+    };
+
+    const buildSectionBlocks = (keys, section) => {
+      // Build blocks in order, but group consecutive meta spans into <div class="meta">...</div>
+      const blocks = [];
+      let metaGroup = [];
+      const flushMeta = () => {
+        if (metaGroup.length > 0) {
+          blocks.push(html`<div class="meta">${metaGroup}</div>`);
+          metaGroup = [];
+        }
+      };
+
+      for (const k of keys) {
+        if (k === 'divider') continue;
+        if (k === 'text') {
+          flushMeta();
+          const node = mkTextBlock();
+          if (node) blocks.push(section === 'inline' ? html`<div class="details">${node}</div>` : node);
+          continue;
+        }
+        if (k === 'map') {
+          // In details section, only render map when expanded (unless user moved map before divider)
+          if (section === 'details' && !expanded) {
+            flushMeta();
+            continue;
+          }
+          flushMeta();
+          const node = mkMapBlock();
+          if (node) blocks.push(section === 'inline' ? html`<div class="details">${node}</div>` : node);
+          continue;
+        }
+        const span = metaSpanFor(k);
+        if (span) metaGroup.push(span);
+      }
+
+      flushMeta();
+      return blocks;
+    };
+
+    const sectionHasPotentialContent = (keys) => {
+      for (const k of keys) {
+        if (k === 'divider') continue;
+        if (k === 'text') {
+          if (this.config.show_text !== false && !!this._detailsText(item)) return true;
+          continue;
+        }
+        if (k === 'map') {
+          if (this.config?.show_map && !!item?.geometry) return true;
+          continue;
+        }
+        if (metaSpanFor(k)) return true;
+      }
+      return false;
+    };
+
+    const inlineBlocks = buildSectionBlocks(inlineKeys, 'inline');
+    const detailsBlocks = buildSectionBlocks(detailsKeys, 'details');
+    const expandable = sectionHasPotentialContent(detailsKeys);
+    const isCompact = !expanded && inlineBlocks.length === 0;
 
     return html`
       <div
@@ -440,14 +594,12 @@ class SmhiAlertCard extends LitElement {
           <div class="title">
             <div class="district ${isCompact ? 'compact' : ''}">${item.descr || item.area || item.event || ''}</div>
           </div>
-          ${inlineParts.length > 0 ? html`<div class="meta">${inlineParts}</div>` : html``}
-          ${inlineTextBlock ? html`<div class="details">${inlineTextBlock}</div>` : html``}
+          ${inlineBlocks.length > 0 ? html`${inlineBlocks}` : html``}
           ${expandable
             ? html`
                 <div class="details">
                   ${expanded ? html`
-                    ${detailsParts.length > 0 ? html`<div class="meta">${detailsParts}</div>` : html``}
-                    ${detailsTextBlock ? html`${detailsTextBlock}` : html``}
+                    ${detailsBlocks.length > 0 ? html`${detailsBlocks}` : html``}
                   ` : html``}
                 </div>
               `
@@ -581,6 +733,223 @@ class SmhiAlertCard extends LitElement {
     return this.config?.show_header !== false;
   }
 
+  updated() {
+    // When geometry maps are enabled, create/update maps for alerts where the map is actually rendered.
+    this._maybeInitMaps();
+  }
+
+  _maybeInitMaps() {
+    if (!this.config?.show_map) return;
+    if (!this.renderRoot) return;
+
+    const messages = this._visibleMessages();
+    const { inlineKeys, detailsKeys } = this._splitMetaOrder(this.config?.meta_order);
+    const mapInInline = inlineKeys.includes('map');
+    const mapInDetails = detailsKeys.includes('map');
+    const activeKeys = new Set();
+    for (let i = 0; i < messages.length; i++) {
+      const item = messages[i];
+      const key = this._alertKey(item, i);
+      const expanded = !!this._expanded?.[key];
+      const mapVisible = (mapInInline || (mapInDetails && expanded));
+      if (!mapVisible) continue;
+      if (!item?.geometry) continue;
+      const mapId = `smhi-alert-map-${this._sanitizeDomId(key)}`;
+      const el = this.renderRoot.querySelector(`#${mapId}`);
+      if (!el) continue;
+      activeKeys.add(key);
+      this._ensureLeafletAndRenderMap(key, el, item.geometry, String(item.code || '').toUpperCase()).catch(() => {
+        const statusEl = this.renderRoot?.querySelector?.(`#smhi-alert-map-status-${this._sanitizeDomId(key)}`);
+        if (statusEl) {
+          statusEl.textContent = this._t('map_failed');
+          statusEl.classList.add('show');
+        }
+      });
+    }
+
+    // Cleanup maps that are no longer rendered (collapsed/filtered away)
+    for (const [key, entry] of this._maps.entries()) {
+      if (activeKeys.has(key)) continue;
+      try {
+        entry?.map?.remove?.();
+      } catch (e) {}
+      this._maps.delete(key);
+    }
+  }
+
+  _sanitizeDomId(value) {
+    // Important: this value is used inside querySelector(`#${id}`).
+    // Characters like ':' and '.' make the selector invalid unless escaped, so we strip them here.
+    // We already prefix with 'smhi-alert-map-' / 'smhi-alert-map-status-' so the final id starts with a letter.
+    return String(value || '').replace(/[^a-zA-Z0-9\-_]/g, '_');
+  }
+
+  _severityStyle(code) {
+    const c = String(code || '').toUpperCase();
+    const accentVar =
+      c === 'RED' ? 'var(--smhi-alert-red, var(--error-color, #e74c3c))'
+      : c === 'ORANGE' ? 'var(--smhi-alert-orange, #e67e22)'
+      : c === 'YELLOW' ? 'var(--smhi-alert-yellow, #f1c40f)'
+      : 'var(--smhi-alert-message, var(--primary-color))';
+    return {
+      color: accentVar,
+      fillColor: accentVar,
+      weight: 2,
+      opacity: 0.9,
+      fillOpacity: 0.18,
+    };
+  }
+
+  _geoSignature(geometry) {
+    try {
+      if (!geometry || typeof geometry !== 'object') return '';
+      const t = geometry.type || '';
+      if (t === 'FeatureCollection') return `FC:${(geometry.features || []).length}`;
+      if (t === 'Feature') return `F:${geometry.geometry?.type || ''}`;
+      if (Array.isArray(geometry.coordinates)) return `${t}:${geometry.coordinates.length}`;
+      return String(t);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  async _ensureLeafletAndRenderMap(key, containerEl, geometry, code) {
+    this._ensureLeafletCssInShadowRoot();
+    const statusEl = this.renderRoot?.querySelector?.(`#smhi-alert-map-status-${this._sanitizeDomId(key)}`);
+    if (statusEl) {
+      statusEl.textContent = this._t('map_loading_leaflet');
+      statusEl.classList.add('show');
+    }
+    const L = await this._ensureLeaflet();
+    if (!L) return;
+
+    const sig = `${this._geoSignature(geometry)}|${String(code || '').toUpperCase()}`;
+    const existing = this._maps.get(key);
+    const containerChanged = existing?.container && existing.container !== containerEl;
+
+    if (existing && containerChanged) {
+      try { existing.map.remove(); } catch (e) {}
+      this._maps.delete(key);
+    }
+
+    let entry = this._maps.get(key);
+    if (!entry) {
+      const map = L.map(containerEl, {
+        zoomControl: this.config?.map_zoom_controls !== false,
+        attributionControl: false,
+        // Keep wheel zoom off by default so dashboard scroll isn't affected
+        scrollWheelZoom: this.config?.map_scroll_wheel === true,
+        // Double click zoom is a nice zoom affordance without interfering with page scroll
+        doubleClickZoom: true,
+        boxZoom: false,
+        keyboard: false,
+        touchZoom: true,
+        tap: false,
+      });
+      const tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(map);
+      entry = { map, layer: null, sig: '', container: containerEl };
+      this._maps.set(key, entry);
+    }
+
+    if (entry.sig !== sig) {
+      if (statusEl) {
+        statusEl.textContent = this._t('map_rendering');
+        statusEl.classList.add('show');
+      }
+      try { entry.layer?.remove?.(); } catch (e) {}
+      entry.layer = L.geoJSON(geometry, { style: () => this._severityStyle(code) }).addTo(entry.map);
+      entry.sig = sig;
+      try {
+        const bounds = entry.layer.getBounds?.();
+        if (bounds && bounds.isValid && bounds.isValid()) {
+          entry.map.fitBounds(bounds, { padding: [12, 12] });
+        }
+      } catch (e) {}
+    }
+
+    // When a map is created in a newly rendered/expanded container, Leaflet needs a size invalidate.
+    requestAnimationFrame(() => {
+      try { entry.map.invalidateSize(); } catch (e) {}
+    });
+
+    // Hide loading overlay once we have a map instance.
+    if (statusEl) {
+      statusEl.classList.remove('show');
+      statusEl.textContent = '';
+    }
+  }
+
+  _ensureLeaflet() {
+    // Share one loader promise across all card instances.
+    window.__smhiAlertLeafletPromise = window.__smhiAlertLeafletPromise || null;
+    if (window.L && window.L.map) return Promise.resolve(window.L);
+    if (window.__smhiAlertLeafletPromise) return window.__smhiAlertLeafletPromise;
+
+    // Prefer ESM import (typically CSP-friendlier in HA than injecting <script src=...>).
+    window.__smhiAlertLeafletPromise = (async () => {
+      try {
+        const mod = await this._withTimeout(import(LEAFLET_ESM_URL), 12000, 'Leaflet ESM import timed out');
+        const L = mod?.default || mod?.L || mod;
+        if (L && L.map) {
+          // Also set window.L for any downstream libs expecting the global.
+          window.L = window.L || L;
+          return L;
+        }
+        throw new Error('Leaflet ESM loaded but did not expose L.map');
+      } catch (err) {
+        // Fallback to classic script tag (may still be blocked by CSP).
+        const jsId = 'smhi-alert-leaflet-js';
+        return await new Promise((resolve, reject) => {
+          try {
+            if (window.L && window.L.map) {
+              resolve(window.L);
+              return;
+            }
+            let script = document.getElementById(jsId);
+            if (!script) {
+              script = document.createElement('script');
+              script.id = jsId;
+              script.src = LEAFLET_JS_SRC;
+              script.async = true;
+              document.head.appendChild(script);
+            }
+            script.addEventListener('load', () => resolve(window.L));
+            script.addEventListener('error', () => reject(err || new Error('Failed to load Leaflet')));
+          } catch (e) {
+            reject(err || e);
+          }
+        });
+      }
+    })();
+
+    return window.__smhiAlertLeafletPromise;
+  }
+
+  _withTimeout(promise, ms, message) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(message || 'Timed out')), ms);
+      promise.then((v) => { clearTimeout(t); resolve(v); }).catch((e) => { clearTimeout(t); reject(e); });
+    });
+  }
+
+  _ensureLeafletCssInShadowRoot() {
+    const id = 'smhi-alert-leaflet-css-shadow';
+    try {
+      if (!this.renderRoot) return;
+      if (this.renderRoot.querySelector(`#${id}`)) return;
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = LEAFLET_CSS_HREF;
+      this.renderRoot.appendChild(link);
+    } catch (e) {
+      // ignore
+    }
+  }
+
   shouldUpdate(changed) {
     if (changed.has('config')) return true;
     if (changed.has('hass')) {
@@ -615,6 +984,10 @@ class SmhiAlertCard extends LitElement {
         show_details: 'Show details',
         hide_details: 'Hide details',
         unknown: 'Unknown',
+        map_loading: 'Loading map…',
+        map_loading_leaflet: 'Loading map (Leaflet)…',
+        map_rendering: 'Rendering area…',
+        map_failed: 'Map failed to load (blocked by browser/HA CSP)',
       },
       sv: {
         no_alerts: 'Inga varningar',
@@ -629,6 +1002,10 @@ class SmhiAlertCard extends LitElement {
         show_details: 'Visa detaljer',
         hide_details: 'Dölj detaljer',
         unknown: 'Okänt',
+        map_loading: 'Laddar karta…',
+        map_loading_leaflet: 'Laddar karta (Leaflet)…',
+        map_rendering: 'Ritar område…',
+        map_failed: 'Kartan kunde inte laddas (blockerad av webbläsare/HA CSP)',
       },
     };
     return (dict[lang] || dict.en)[key] || key;
@@ -651,22 +1028,29 @@ class SmhiAlertCard extends LitElement {
     if (normalized.show_text === undefined) normalized.show_text = true;
     if (normalized.show_icon === undefined) normalized.show_icon = true;
     if (normalized.severity_background === undefined) normalized.severity_background = false;
-    if (normalized.hide_when_empty === undefined) normalized.hide_when_empty = false;
+    if (normalized.show_map === undefined) normalized.show_map = false;
+    if (normalized.map_height === undefined) normalized.map_height = 170;
+    if (normalized.map_zoom_controls === undefined) normalized.map_zoom_controls = true;
+    if (normalized.map_scroll_wheel === undefined) normalized.map_scroll_wheel = false;
+    normalized.map_height = Number(normalized.map_height || 170);
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
     if (normalized.group_by === undefined) normalized.group_by = 'none';
     if (!Array.isArray(normalized.meta_order) || normalized.meta_order.length === 0) {
-      // Default to placing text in the details section (after divider)
-      normalized.meta_order = ['area','type','level','severity','published','period','divider','text'];
+      // Default to placing text + map in the details section (after divider)
+      normalized.meta_order = ['area','type','level','severity','published','period','divider','text','map'];
     } else {
-      // Ensure divider and text exist
+      // Ensure divider/text/map exist
       if (!normalized.meta_order.includes('divider')) normalized.meta_order = [...normalized.meta_order, 'divider'];
       if (!normalized.meta_order.includes('text')) normalized.meta_order = [...normalized.meta_order, 'text'];
+      if (!normalized.meta_order.includes('map')) normalized.meta_order = [...normalized.meta_order, 'map'];
     }
     if (!Array.isArray(normalized.filter_severities)) normalized.filter_severities = [];
     if (!Array.isArray(normalized.filter_areas)) normalized.filter_areas = [];
     // collapse_details is no longer used; collapse is inferred by divider position
     delete normalized.collapse_details;
+    if (Object.prototype.hasOwnProperty.call(normalized, 'hide_when_empty')) delete normalized.hide_when_empty;
+    if (Object.prototype.hasOwnProperty.call(normalized, 'debug')) delete normalized.debug; // legacy
     if (normalized.show_border === undefined) normalized.show_border = true; // kept for compat but unused
     return normalized;
   }
@@ -682,6 +1066,10 @@ class SmhiAlertCard extends LitElement {
       show_header: true,
       show_icon: true,
       severity_background: false,
+      show_map: false,
+      map_height: 170,
+      map_zoom_controls: true,
+      map_scroll_wheel: false,
       show_area: true,
       show_type: true,
       show_level: true,
@@ -689,14 +1077,13 @@ class SmhiAlertCard extends LitElement {
       show_published: true,
       show_period: true,
       show_text: true,
-      hide_when_empty: true,
       max_items: 0,
       sort_order: 'severity_then_time',
       group_by: 'none',
       filter_severities: [],
       filter_areas: [],
       // collapse inferred by divider; default puts text in details (after divider)
-      meta_order: ['area','type','level','severity','published','period','divider','text'],
+      meta_order: ['area','type','level','severity','published','period','divider','text','map'],
     };
   }
 }
@@ -713,6 +1100,9 @@ class SmhiAlertCardEditor extends LitElement {
 
   static styles = css`
     .container { padding: 8px 0 0 0; }
+    .map-hint { margin: 10px 0 12px 0; padding: 0 12px; }
+    .map-hint .hint-title { font-weight: 600; margin-bottom: 4px; }
+    .map-hint .hint-text { color: var(--secondary-text-color); font-size: 0.95em; line-height: 1.4; }
     .meta-fields { margin: 12px 0; padding: 8px 12px; }
     .meta-fields-title { color: var(--secondary-text-color); margin-bottom: 6px; }
     .meta-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 6px 0; }
@@ -731,7 +1121,10 @@ class SmhiAlertCardEditor extends LitElement {
       { name: 'show_header', label: 'Show header', selector: { boolean: {} } },
       { name: 'show_icon', label: 'Show icon', selector: { boolean: {} } },
       { name: 'severity_background', label: 'Severity background', selector: { boolean: {} } },
-      { name: 'hide_when_empty', label: 'Hide when empty', selector: { boolean: {} } },
+      { name: 'show_map', label: 'Show map (geometry)', selector: { boolean: {} } },
+      { name: 'map_height', label: 'Map height (px)', selector: { number: { min: 90, max: 420, mode: 'box' } } },
+      { name: 'map_zoom_controls', label: 'Map zoom controls (+/−)', selector: { boolean: {} } },
+      { name: 'map_scroll_wheel', label: 'Map scroll wheel zoom', selector: { boolean: {} } },
       { name: 'max_items', label: 'Max items', selector: { number: { min: 0, mode: 'box' } } },
       {
         name: 'sort_order', label: 'Sort order',
@@ -767,7 +1160,10 @@ class SmhiAlertCardEditor extends LitElement {
       show_header: this._config.show_header !== undefined ? this._config.show_header : true,
       show_icon: this._config.show_icon !== undefined ? this._config.show_icon : true,
       severity_background: this._config.severity_background !== undefined ? this._config.severity_background : false,
-      hide_when_empty: this._config.hide_when_empty !== undefined ? this._config.hide_when_empty : true,
+      show_map: this._config.show_map !== undefined ? this._config.show_map : false,
+      map_height: this._config.map_height !== undefined ? this._config.map_height : 170,
+      map_zoom_controls: this._config.map_zoom_controls !== undefined ? this._config.map_zoom_controls : true,
+      map_scroll_wheel: this._config.map_scroll_wheel !== undefined ? this._config.map_scroll_wheel : false,
       max_items: this._config.max_items ?? 0,
       sort_order: this._config.sort_order || 'severity_then_time',
       group_by: this._config.group_by || 'none',
@@ -786,30 +1182,80 @@ class SmhiAlertCardEditor extends LitElement {
       hold_action: this._config.hold_action || {},
     };
 
-    const allowed = ['area','type','level','severity','published','period'];
+    const allowed = ['area','type','level','severity','published','period','map'];
     const special = ['divider','text'];
     const allowedWithSpecial = [...allowed, ...special];
     const currentOrderRaw = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
       ? this._config.meta_order.filter((k) => allowedWithSpecial.includes(k))
-      : ['area','type','level','severity','published','period','divider','text'];
+      : ['area','type','level','severity','published','period','divider','text','map'];
     // ensure presence
     let currentOrder = [...currentOrderRaw];
     if (!currentOrder.includes('divider')) currentOrder.push('divider');
     if (!currentOrder.includes('text')) currentOrder.push('text');
+    if (!currentOrder.includes('map')) currentOrder.push('map');
     const filledOrder = [...currentOrder, ...allowedWithSpecial.filter((k) => !currentOrder.includes(k))];
 
     const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
     const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
+
+    const lang = (this.hass?.language || 'en').toLowerCase();
+    const mapHint =
+      lang.startsWith('sv')
+        ? {
+            title: 'Obs: Kräver inställning i integrationen',
+            text: 'För att “Show map (geometry)” ska fungera behöver du aktivera “Include geometry (map polygons)” i SMHI Alerts-integrationen (Inställningar → Enheter & tjänster → SMHI Alerts → Konfigurera).',
+          }
+        : {
+            title: 'Note: Requires an integration setting',
+            text: 'For “Show map (geometry)” to work, enable “Include geometry (map polygons)” in the SMHI Alerts integration (Settings → Devices & Services → SMHI Alerts → Configure).',
+          };
+
+    // Keep original schema order, but insert the hint directly below "show_map"
+    // by splitting the form at that exact point.
+    const showMapIdx = schemaTop.findIndex((s) => s.name === 'show_map');
+    const schemaBeforeShowMap = showMapIdx >= 0 ? schemaTop.slice(0, showMapIdx) : schemaTop;
+    const schemaShowMapOnly = showMapIdx >= 0 ? schemaTop.slice(showMapIdx, showMapIdx + 1) : [];
+    const schemaAfterShowMap = showMapIdx >= 0 ? schemaTop.slice(showMapIdx + 1) : [];
 
     return html`
       <div class="container">
         <ha-form
           .hass=${this.hass}
           .data=${data}
-          .schema=${schemaTop}
+          .schema=${schemaBeforeShowMap}
           .computeLabel=${this._computeLabel}
           @value-changed=${this._valueChanged}
         ></ha-form>
+        ${schemaShowMapOnly.length
+          ? html`
+              <ha-form
+                .hass=${this.hass}
+                .data=${data}
+                .schema=${schemaShowMapOnly}
+                .computeLabel=${this._computeLabel}
+                @value-changed=${this._valueChanged}
+              ></ha-form>
+            `
+          : html``}
+        ${data.show_map
+          ? html`
+              <div class="map-hint">
+                <div class="hint-title">${mapHint.title}</div>
+                <div class="hint-text">${mapHint.text}</div>
+              </div>
+            `
+          : html``}
+        ${schemaAfterShowMap.length
+          ? html`
+              <ha-form
+                .hass=${this.hass}
+                .data=${data}
+                .schema=${schemaAfterShowMap}
+                .computeLabel=${this._computeLabel}
+                @value-changed=${this._valueChanged}
+              ></ha-form>
+            `
+          : html``}
         <div class="meta-fields">
           ${filledOrder.map((key, index) => {
             if (key === 'divider') {
@@ -880,6 +1326,7 @@ class SmhiAlertCardEditor extends LitElement {
     if (key === 'published') return this._config.show_published !== false;
     if (key === 'period') return this._config.show_period !== false;
     if (key === 'text') return this._config.show_text !== false;
+    if (key === 'map') return this._config.show_map === true;
     if (key === 'divider') return true;
     return true;
   }
@@ -894,6 +1341,7 @@ class SmhiAlertCardEditor extends LitElement {
     else if (key === 'published') next.show_published = on;
     else if (key === 'period') next.show_period = on;
     else if (key === 'text') next.show_text = on;
+    else if (key === 'map') next.show_map = on;
     this._config = next;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next } }));
   }
@@ -901,7 +1349,7 @@ class SmhiAlertCardEditor extends LitElement {
   _moveMeta(key, delta) {
     // Normalize to the same order the UI renders (includes 'divider' and 'text' and all allowed keys),
     // so moving across the divider is always possible and saved back stably.
-    const baseKeys = ['area','type','level','severity','published','period'];
+    const baseKeys = ['area','type','level','severity','published','period','map'];
     const specialKeys = ['divider','text'];
     const allKeys = [...baseKeys, ...specialKeys];
     const raw = (this._config.meta_order && Array.isArray(this._config.meta_order) && this._config.meta_order.length)
@@ -927,7 +1375,7 @@ class SmhiAlertCardEditor extends LitElement {
   }
 
   _labelForMeta(key) {
-    const map = { area: 'Area', type: 'Type', level: 'Level', severity: 'Severity', published: 'Published', period: 'Period', text: 'Text', divider: '— Details —' };
+    const map = { area: 'Area', type: 'Type', level: 'Level', severity: 'Severity', published: 'Published', period: 'Period', text: 'Text', map: 'Map', divider: '— Details —' };
     return map[key] || key;
   }
 
@@ -938,7 +1386,10 @@ class SmhiAlertCardEditor extends LitElement {
       show_header: 'Show header',
       show_icon: 'Show icon',
       severity_background: 'Severity background',
-      hide_when_empty: 'Hide when empty',
+      show_map: 'Show map (geometry)',
+      map_height: 'Map height (px)',
+      map_zoom_controls: 'Map zoom controls (+/−)',
+      map_scroll_wheel: 'Map scroll wheel zoom',
       max_items: 'Max items',
       sort_order: 'Sort order',
       group_by: 'Group by',
