@@ -1100,6 +1100,9 @@ class SmhiAlertCardEditor extends LitElement {
 
   static styles = css`
     .container { padding: 8px 0 0 0; }
+    .map-hint { margin: 10px 0 12px 0; padding: 0 12px; }
+    .map-hint .hint-title { font-weight: 600; margin-bottom: 4px; }
+    .map-hint .hint-text { color: var(--secondary-text-color); font-size: 0.95em; line-height: 1.4; }
     .meta-fields { margin: 12px 0; padding: 8px 12px; }
     .meta-fields-title { color: var(--secondary-text-color); margin-bottom: 6px; }
     .meta-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 6px 0; }
@@ -1195,15 +1198,64 @@ class SmhiAlertCardEditor extends LitElement {
     const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
     const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
 
+    const lang = (this.hass?.language || 'en').toLowerCase();
+    const mapHint =
+      lang.startsWith('sv')
+        ? {
+            title: 'Obs: Kräver inställning i integrationen',
+            text: 'För att “Show map (geometry)” ska fungera behöver du aktivera “Include geometry (map polygons)” i SMHI Alerts-integrationen (Inställningar → Enheter & tjänster → SMHI Alerts → Konfigurera).',
+          }
+        : {
+            title: 'Note: Requires an integration setting',
+            text: 'For “Show map (geometry)” to work, enable “Include geometry (map polygons)” in the SMHI Alerts integration (Settings → Devices & Services → SMHI Alerts → Configure).',
+          };
+
+    // Keep original schema order, but insert the hint directly below "show_map"
+    // by splitting the form at that exact point.
+    const showMapIdx = schemaTop.findIndex((s) => s.name === 'show_map');
+    const schemaBeforeShowMap = showMapIdx >= 0 ? schemaTop.slice(0, showMapIdx) : schemaTop;
+    const schemaShowMapOnly = showMapIdx >= 0 ? schemaTop.slice(showMapIdx, showMapIdx + 1) : [];
+    const schemaAfterShowMap = showMapIdx >= 0 ? schemaTop.slice(showMapIdx + 1) : [];
+
     return html`
       <div class="container">
         <ha-form
           .hass=${this.hass}
           .data=${data}
-          .schema=${schemaTop}
+          .schema=${schemaBeforeShowMap}
           .computeLabel=${this._computeLabel}
           @value-changed=${this._valueChanged}
         ></ha-form>
+        ${schemaShowMapOnly.length
+          ? html`
+              <ha-form
+                .hass=${this.hass}
+                .data=${data}
+                .schema=${schemaShowMapOnly}
+                .computeLabel=${this._computeLabel}
+                @value-changed=${this._valueChanged}
+              ></ha-form>
+            `
+          : html``}
+        ${data.show_map
+          ? html`
+              <div class="map-hint">
+                <div class="hint-title">${mapHint.title}</div>
+                <div class="hint-text">${mapHint.text}</div>
+              </div>
+            `
+          : html``}
+        ${schemaAfterShowMap.length
+          ? html`
+              <ha-form
+                .hass=${this.hass}
+                .data=${data}
+                .schema=${schemaAfterShowMap}
+                .computeLabel=${this._computeLabel}
+                @value-changed=${this._valueChanged}
+              ></ha-form>
+            `
+          : html``}
         <div class="meta-fields">
           ${filledOrder.map((key, index) => {
             if (key === 'divider') {
