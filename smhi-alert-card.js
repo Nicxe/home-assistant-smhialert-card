@@ -190,11 +190,22 @@ class SmhiAlertCard extends LitElement {
       border: 1px solid var(--divider-color);
       background: var(--card-background-color);
       position: relative;
+      /* Prevent Leaflet's high z-index panes/controls from escaping above HA dialogs/menus */
+      z-index: 0;
+      isolation: isolate;
     }
     .geo-map {
       width: 100%;
       height: var(--smhi-alert-map-height, 170px);
+      /* Leaflet attaches panes/controls with high z-index; lock them into this local stacking context */
+      position: relative;
+      z-index: 0 !important;
     }
+    .geo-map.leaflet-container { z-index: 0 !important; }
+    /* Keep Leaflet controls above map tiles (but still inside the local stacking context) */
+    .geo-map .leaflet-top,
+    .geo-map .leaflet-bottom { z-index: 1000 !important; }
+    .geo-map .leaflet-control { z-index: 1000 !important; }
     .map-status {
       position: absolute;
       inset: 0;
