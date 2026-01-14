@@ -169,6 +169,37 @@ class SmhiAlertCard extends LitElement {
       color: var(--primary-text-color);
       overflow-wrap: anywhere;
     }
+    .details-text {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      line-height: 1.5;
+      font-family: inherit;
+      font-size: 0.95em;
+      color: var(--primary-text-color);
+      overflow-wrap: anywhere;
+    }
+    .details-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .details-heading {
+      font-weight: 600;
+      font-size: 1em;
+    }
+    .details-paragraph {
+      margin: 0;
+    }
+    .details-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+    }
+    .details-list li {
+      margin: 0;
+    }
     .details-toggle {
       color: var(--primary-color);
       cursor: pointer;
@@ -194,7 +225,8 @@ class SmhiAlertCard extends LitElement {
       white-space: nowrap;
     }
     /* Ensure consistent spacing when details are expanded */
-    .details .meta + .md-text { margin-top: 6px; }
+    .details .meta + .md-text,
+    .details .meta + .details-text { margin-top: 6px; }
 
     /* Optional minimap (Leaflet) */
     .map-wrap {
@@ -508,8 +540,7 @@ class SmhiAlertCard extends LitElement {
       if (this.config.show_text === false) return null;
       const txt = this._detailsText(item);
       if (!txt) return null;
-      const textContent = this._normalizeMultiline(txt);
-      return html`<div class="md-text">${textContent}</div>`;
+      return this._formatDetailsText(txt);
     };
 
     const mkMapBlock = () => {
@@ -711,6 +742,127 @@ class SmhiAlertCard extends LitElement {
     return deindented.join('\n');
   }
 
+  _formatDetailsText(raw) {
+    const normalized = this._normalizeMultiline(raw);
+    if (!normalized) return null;
+    const sections = this._parseDetailsSections(normalized);
+    const hasHeadings = sections.some((section) => !!section.heading);
+    const hasBlankLines = /\n\s*\n/.test(normalized);
+    if (!hasHeadings && !hasBlankLines) {
+      return html`<div class="md-text">${normalized}</div>`;
+    }
+
+    const blocks = sections
+      .map((section) => {
+        const paragraphs = this._splitParagraphs(section.lines || []);
+        if (paragraphs.length === 0 && !section.heading) return null;
+        const wantsList = this._headingWantsList(section.heading, paragraphs);
+        const body = wantsList
+          ? html`<ul class="details-list">${paragraphs.map((p) => html`<li>${p}</li>`)}</ul>`
+          : html`${paragraphs.map((p) => html`<p class="details-paragraph">${p}</p>`)}`;
+        return html`
+          <div class="details-section">
+            ${section.heading ? html`<div class="details-heading">${section.heading}</div>` : html``}
+            ${body}
+          </div>
+        `;
+      })
+      .filter(Boolean);
+
+    return html`<div class="details-text">${blocks}</div>`;
+  }
+
+  _parseDetailsSections(text) {
+    const lines = String(text).split('\n');
+    const sections = [];
+    let current = null;
+
+    const pushCurrent = () => {
+      if (!current) return;
+      const trimmed = this._trimEmptyLines(current.lines || []);
+      if (trimmed.length === 0 && !current.heading) {
+        current = null;
+        return;
+      }
+      sections.push({ heading: current.heading, lines: trimmed });
+      current = null;
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (current) current.lines.push('');
+        continue;
+      }
+      const headingMatch = this._matchDetailsHeading(line);
+      if (headingMatch) {
+        pushCurrent();
+        current = { heading: headingMatch.heading, lines: [] };
+        if (headingMatch.rest) current.lines.push(headingMatch.rest);
+        continue;
+      }
+      if (!current) current = { heading: null, lines: [] };
+      current.lines.push(line);
+    }
+    pushCurrent();
+    return sections;
+  }
+
+  _matchDetailsHeading(line) {
+    const match = String(line).match(/^([^:]{2,80})\s*:\s*(.*)$/);
+    if (!match) return null;
+    const heading = match[1].trim();
+    if (!heading) return null;
+    const rest = (match[2] || '').trim();
+    const words = heading.split(/\s+/).filter(Boolean);
+    if (heading.length > 50 || words.length > 6) return null;
+    if (!/[A-Za-zÅÄÖåäö]/.test(heading)) return null;
+    if (/[0-9]/.test(heading) && !heading.includes('?')) return null;
+    if (/https?:\/\//i.test(heading)) return null;
+    return { heading, rest };
+  }
+
+  _trimEmptyLines(lines) {
+    let start = 0;
+    while (start < lines.length && !lines[start].trim()) start += 1;
+    let end = lines.length - 1;
+    while (end >= start && !lines[end].trim()) end -= 1;
+    return lines.slice(start, end + 1);
+  }
+
+  _splitParagraphs(lines) {
+    const paragraphs = [];
+    let current = [];
+    const flush = () => {
+      if (current.length === 0) return;
+      paragraphs.push(current.join(' ').replace(/\s+/g, ' ').trim());
+      current = [];
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        flush();
+        continue;
+      }
+      current.push(trimmed);
+    }
+    flush();
+    return paragraphs;
+  }
+
+  _headingWantsList(heading, paragraphs) {
+    if (!heading) return false;
+    if (!Array.isArray(paragraphs) || paragraphs.length < 2) return false;
+    const normalized = heading.trim().toLowerCase();
+    return normalized.includes('tänka')
+      || normalized.includes('att tänka')
+      || normalized.includes('tips')
+      || normalized.includes('advice')
+      || normalized.includes('recommendation')
+      || normalized.includes('what should i');
+  }
+
   _toggleDetails(e, item, idx) {
     e.stopPropagation();
     const key = this._alertKey(item, idx);
@@ -763,19 +915,80 @@ class SmhiAlertCard extends LitElement {
   }
 
   _fmtTs(value) {
-    if (!value) return '';
-    try {
-      const d = new Date(value);
-      return d.toLocaleString();
-    } catch (e) {
-      return String(value);
-    }
+    return this._formatDate(value);
   }
 
   _fmtEnd(end) {
     const val = String(end || '').trim().toLowerCase();
     if (!end || val === 'okänt' || val === 'unknown') return this._t('unknown');
-    return this._fmtTs(end);
+    return this._formatDate(end);
+  }
+
+  _formatDate(value) {
+    if (!value) return '';
+    const date = this._parseDate(value);
+    if (!date) return String(value);
+    const locale = (this.hass?.language || 'en').toLowerCase();
+    const format = this.config?.date_format || 'locale';
+    if (format === 'weekday_time') {
+      return this._formatDateParts(
+        date,
+        locale,
+        { weekday: 'long' },
+        { hour: '2-digit', minute: '2-digit' },
+      );
+    }
+    if (format === 'day_month_time') {
+      return this._formatDateParts(
+        date,
+        locale,
+        { day: 'numeric', month: 'long' },
+        { hour: '2-digit', minute: '2-digit' },
+      );
+    }
+    if (format === 'day_month_time_year') {
+      return this._formatDateParts(
+        date,
+        locale,
+        { day: 'numeric', month: 'long', year: 'numeric' },
+        { hour: '2-digit', minute: '2-digit' },
+      );
+    }
+    return date.toLocaleString(locale);
+  }
+
+  _formatDateParts(date, locale, dateOptions, timeOptions) {
+    const safeTimeOptions = timeOptions ? { ...timeOptions } : null;
+    if (safeTimeOptions && !Object.prototype.hasOwnProperty.call(safeTimeOptions, 'hour12')) {
+      safeTimeOptions.hour12 = false;
+    }
+    const dateStr = dateOptions
+      ? new Intl.DateTimeFormat(locale, dateOptions).format(date)
+      : '';
+    const timeStr = safeTimeOptions
+      ? new Intl.DateTimeFormat(locale, safeTimeOptions).format(date)
+      : '';
+    if (dateStr && timeStr) return `${dateStr} ${timeStr}`;
+    return dateStr || timeStr || '';
+  }
+
+  _parseDate(value) {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === 'number') {
+      const numericDate = new Date(value);
+      return Number.isNaN(numericDate.getTime()) ? null : numericDate;
+    }
+    const raw = String(value).trim();
+    if (!raw) return null;
+    let normalized = raw;
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(raw)) {
+      normalized = raw.replace(' ', 'T');
+    }
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   _showHeader() {
@@ -1084,7 +1297,12 @@ class SmhiAlertCard extends LitElement {
     normalized.map_height = Number(normalized.map_height || 170);
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
+    if (normalized.date_format === undefined) normalized.date_format = 'locale';
     if (normalized.group_by === undefined) normalized.group_by = 'none';
+    const allowedDateFormats = ['locale', 'day_month_time', 'weekday_time', 'day_month_time_year'];
+    if (!allowedDateFormats.includes(normalized.date_format)) {
+      normalized.date_format = 'locale';
+    }
     if (!Array.isArray(normalized.meta_order) || normalized.meta_order.length === 0) {
       // Default to placing text + map in the details section (after divider)
       normalized.meta_order = ['area','type','level','severity','published','period','divider','text','map'];
@@ -1128,6 +1346,7 @@ class SmhiAlertCard extends LitElement {
       show_text: true,
       max_items: 0,
       sort_order: 'severity_then_time',
+      date_format: 'locale',
       group_by: 'none',
       filter_severities: [],
       filter_areas: [],
@@ -1164,6 +1383,21 @@ class SmhiAlertCardEditor extends LitElement {
 
   render() {
     if (!this.hass || !this._config) return html``;
+    const lang = (this.hass?.language || 'en').toLowerCase();
+    const dateFormatOptions = lang.startsWith('sv')
+      ? [
+          { value: 'locale', label: 'Systemstandard' },
+          { value: 'day_month_time', label: '14 januari 13:00' },
+          { value: 'weekday_time', label: 'Onsdag 13:00' },
+          { value: 'day_month_time_year', label: '14 januari 2026 13:00' },
+        ]
+      : [
+          { value: 'locale', label: 'System default' },
+          { value: 'day_month_time', label: '14 January 13:00' },
+          { value: 'weekday_time', label: 'Wednesday 13:00' },
+          { value: 'day_month_time_year', label: '14 January 2026 13:00' },
+        ];
+    const dateFormatLabel = lang.startsWith('sv') ? 'Datumformat' : 'Date format';
     const schema = [
       { name: 'entity', label: 'Entity', required: true, selector: { entity: { domain: 'sensor' } } },
       { name: 'title', label: 'Title', selector: { text: {} } },
@@ -1182,6 +1416,7 @@ class SmhiAlertCardEditor extends LitElement {
           { value: 'time_desc', label: 'Time (newest first)' },
         ] } },
       },
+      { name: 'date_format', label: dateFormatLabel, selector: { select: { mode: 'dropdown', options: dateFormatOptions } } },
       { name: 'group_by', label: 'Group by', selector: { select: { mode: 'dropdown', options: [
         { value: 'none', label: 'No grouping' },
         { value: 'area', label: 'By area' },
@@ -1215,6 +1450,7 @@ class SmhiAlertCardEditor extends LitElement {
       map_scroll_wheel: this._config.map_scroll_wheel !== undefined ? this._config.map_scroll_wheel : false,
       max_items: this._config.max_items ?? 0,
       sort_order: this._config.sort_order || 'severity_then_time',
+      date_format: this._config.date_format || 'locale',
       group_by: this._config.group_by || 'none',
       filter_severities: this._config.filter_severities || [],
       filter_areas: (this._config.filter_areas || []).join(', '),
@@ -1247,7 +1483,6 @@ class SmhiAlertCardEditor extends LitElement {
     const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
     const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
 
-    const lang = (this.hass?.language || 'en').toLowerCase();
     const mapHint =
       lang.startsWith('sv')
         ? {
@@ -1429,6 +1664,7 @@ class SmhiAlertCardEditor extends LitElement {
   }
 
   _computeLabel = (schema) => {
+    if (schema.label) return schema.label;
     const labels = {
       entity: 'Entity',
       title: 'Title',
@@ -1441,6 +1677,7 @@ class SmhiAlertCardEditor extends LitElement {
       map_scroll_wheel: 'Map scroll wheel zoom',
       max_items: 'Max items',
       sort_order: 'Sort order',
+      date_format: 'Date format',
       group_by: 'Group by',
       filter_severities: 'Filter severities',
       filter_areas: 'Filter areas (comma-separated)',
