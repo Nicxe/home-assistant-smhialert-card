@@ -1,4 +1,18 @@
-import { LitElement, html, css } from 'https://unpkg.com/lit?module';
+// Använd HA:s inbyggda Lit om tillgängligt, annars fallback till CDN
+const getLit = async () => {
+  // Home Assistant 2023.4+ exponerar Lit globalt
+  if (window.LitElement && window.litHtml) {
+    return {
+      LitElement: window.LitElement,
+      html: window.litHtml.html,
+      css: window.litHtml.css,
+    };
+  }
+  // Fallback för äldre HA-versioner eller fristående testning
+  return import('https://unpkg.com/lit@3.1.0?module');
+};
+
+const { LitElement, html, css } = await getLit();
 
 const fireIcon = new URL('./fire.svg', import.meta.url).href;
 const waterShortageIcon = new URL('./waterShortage.svg', import.meta.url).href;
@@ -257,6 +271,22 @@ class SmhiAlertCard extends LitElement {
     this._maps = new Map();
   }
 
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Rensa timers för att undvika minnesläckor
+    clearTimeout(this._holdTimer);
+    clearTimeout(this._tapTimer);
+    // Rensa Leaflet-kartinstanser
+    for (const [, entry] of this._maps.entries()) {
+      try {
+        entry?.map?.remove?.();
+      } catch (e) {
+        // Ignorera fel vid cleanup
+      }
+    }
+    this._maps.clear();
+  }
+
   setConfig(config) {
     if (!config.entity) {
       throw new Error('You must specify an entity.');
@@ -355,25 +385,32 @@ class SmhiAlertCard extends LitElement {
     }
   }
 
+  _handleIconError(e, fallbackPath) {
+    const img = e.target;
+    if (img && img.src !== fallbackPath) {
+      img.src = fallbackPath;
+    }
+  }
+
   _iconTemplate(item) {
     if (item.code === 'MESSAGE') {
       const event = item.event.trim().toLowerCase();
       if (event === 'brandrisk' || event === 'fire risk') {
-        return html`<img class="icon" src="${fireIcon}" alt="icon" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/fire.svg';" />`;
+        return html`<img class="icon" src="${fireIcon}" alt="fire risk" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/fire.svg')} />`;
       } else if (event === 'risk för vattenbrist' || event === 'risk for water shortage') {
-        return html`<img class="icon" src="${waterShortageIcon}" alt="icon" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/waterShortage.svg';" />`;
+        return html`<img class="icon" src="${waterShortageIcon}" alt="water shortage" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/waterShortage.svg')} />`;
       } else if (event === 'höga temperaturer' || event === 'high temperatures') {
-        return html`<img class="icon" src="${temperatureIcon}" alt="icon" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/temperature.svg';" />`;
+        return html`<img class="icon" src="${temperatureIcon}" alt="high temperatures" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/temperature.svg')} />`;
       }
       return html`<ha-icon class="icon" icon="mdi:message-alert-outline" aria-hidden="true"></ha-icon>`;
     }
     switch (item.code) {
       case 'YELLOW':
-        return html`<img class="icon" src="${yellowWarningIcon}" alt="yellow" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/yellowWarning.svg';" />`;
+        return html`<img class="icon" src="${yellowWarningIcon}" alt="yellow warning" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/yellowWarning.svg')} />`;
       case 'ORANGE':
-        return html`<img class="icon" src="${orangeWarningIcon}" alt="orange" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/orangeWarning.svg';" />`;
+        return html`<img class="icon" src="${orangeWarningIcon}" alt="orange warning" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/orangeWarning.svg')} />`;
       case 'RED':
-        return html`<img class="icon" src="${redWarningIcon}" alt="red" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/redWarning.svg';" />`;
+        return html`<img class="icon" src="${redWarningIcon}" alt="red warning" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/redWarning.svg')} />`;
       default:
         return html`<ha-icon class="icon" icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`;
     }
@@ -622,6 +659,7 @@ class SmhiAlertCard extends LitElement {
               class="details-toggle compact"
               role="button"
               tabindex="0"
+              aria-expanded="${expanded}"
               title="${expanded ? t('hide_details') : t('show_details')}"
               @click=${(e) => this._toggleDetails(e, item, idx)}
               @pointerdown=${(e) => e.stopPropagation()}
@@ -1444,14 +1482,6 @@ SmhiAlertCard.prototype._onRowAction = function (e, item) {
   }
   const action = this.config?.tap_action || { action: 'more-info' };
   this._runAction(action, item);
-};
-
-SmhiAlertCard.prototype._onKeydown = function (e, item) {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    const action = this.config?.tap_action || { action: 'more-info' };
-    this._runAction(action, item);
-  }
 };
 
 SmhiAlertCard.prototype._runAction = function (action, item) {
