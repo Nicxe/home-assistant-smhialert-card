@@ -68,7 +68,7 @@ class SmhiAlertCard extends LitElement {
     }
     .alert {
       display: grid;
-      grid-template-columns: auto 1fr auto;
+      grid-template-columns: auto 1fr;
       gap: 12px;
       align-items: start;
       padding: 12px;
@@ -145,6 +145,8 @@ class SmhiAlertCard extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      flex: 1 1 auto;
+      min-width: 0;
     }
     /* In compact mode, apply a tiny optical offset so the text looks centered */
     .district.compact {
@@ -210,13 +212,11 @@ class SmhiAlertCard extends LitElement {
     .toggle-col {
       display: flex;
       justify-content: flex-end;
-      align-items: flex-start;
-      padding-top: 2px;
-      padding-right: 2px;
+      align-items: center;
+      margin-left: auto;
     }
     .toggle-col.compact {
       align-items: center;
-      padding-top: 0;
     }
     /* Compact toggle when placed in the right column (prevents it from consuming an extra line) */
     .details-toggle.compact {
@@ -672,6 +672,29 @@ class SmhiAlertCard extends LitElement {
         <div class="content ${isCompact ? 'compact' : ''}">
           <div class="title">
             <div class="district ${isCompact ? 'compact' : ''}">${item.descr || item.area || item.event || ''}</div>
+            ${expandable ? html`
+              <div class="toggle-col ${isCompact ? 'compact' : ''}">
+                <div
+                  class="details-toggle compact"
+                  role="button"
+                  tabindex="0"
+                  aria-expanded="${expanded}"
+                  title="${expanded ? t('hide_details') : t('show_details')}"
+                  @click=${(e) => this._toggleDetails(e, item, idx)}
+                  @pointerdown=${(e) => e.stopPropagation()}
+                  @pointerup=${(e) => e.stopPropagation()}
+                  @keydown=${(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      this._toggleDetails(e, item, idx);
+                    }
+                    e.stopPropagation();
+                  }}
+                >
+                  ${expanded ? t('hide_details') : t('show_details')}
+                </div>
+              </div>
+            ` : html``}
           </div>
           ${inlineBlocks.length > 0 ? html`${inlineBlocks}` : html``}
           ${expandable
@@ -684,29 +707,6 @@ class SmhiAlertCard extends LitElement {
               `
             : html``}
         </div>
-        ${expandable ? html`
-          <div class="toggle-col ${isCompact ? 'compact' : ''}">
-            <div
-              class="details-toggle compact"
-              role="button"
-              tabindex="0"
-              aria-expanded="${expanded}"
-              title="${expanded ? t('hide_details') : t('show_details')}"
-              @click=${(e) => this._toggleDetails(e, item, idx)}
-              @pointerdown=${(e) => e.stopPropagation()}
-              @pointerup=${(e) => e.stopPropagation()}
-              @keydown=${(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  this._toggleDetails(e, item, idx);
-                }
-                e.stopPropagation();
-              }}
-            >
-              ${expanded ? t('hide_details') : t('show_details')}
-            </div>
-          </div>
-        ` : html`<div></div>`}
       </div>`;
   }
 
