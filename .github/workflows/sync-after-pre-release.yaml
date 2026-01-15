@@ -1,0 +1,13 @@
+name: Sync beta back to dev
+
+on:
+  release:
+    types: [prereleased]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    uses: nicxe/.github/.github/workflows/reusable-sync-beta-to-dev.yml@main
+    secrets: inherit
