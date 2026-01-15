@@ -242,7 +242,10 @@ class SmhiAlertCard extends LitElement {
     }
     .geo-map {
       width: 100%;
-      height: var(--smhi-alert-map-height, 170px);
+      aspect-ratio: var(--smhi-alert-map-aspect, 16 / 9);
+      height: auto;
+      min-height: var(--smhi-alert-map-min-height, 140px);
+      max-height: var(--smhi-alert-map-max-height, 260px);
       /* Leaflet attaches panes/controls with high z-index; lock them into this local stacking context */
       position: relative;
       z-index: 0 !important;
@@ -458,11 +461,8 @@ class SmhiAlertCard extends LitElement {
       ? (this.config.title || stateObj?.attributes?.friendly_name || 'SMHI')
       : undefined;
 
-    const mapHeight = Number(this.config?.map_height || 170);
-    const mapStyle = this.config?.show_map ? `--smhi-alert-map-height: ${mapHeight}px;` : '';
-
     return html`
-      <ha-card .header=${header} style=${mapStyle}>
+      <ha-card .header=${header}>
         ${messages.length === 0
           ? html`<div class="empty">${t('no_alerts')}</div>`
           : html`<div class="alerts">${this._renderGrouped(messages)}</div>`}
@@ -1291,10 +1291,8 @@ class SmhiAlertCard extends LitElement {
     if (normalized.show_icon === undefined) normalized.show_icon = true;
     if (normalized.severity_background === undefined) normalized.severity_background = false;
     if (normalized.show_map === undefined) normalized.show_map = false;
-    if (normalized.map_height === undefined) normalized.map_height = 170;
     if (normalized.map_zoom_controls === undefined) normalized.map_zoom_controls = true;
     if (normalized.map_scroll_wheel === undefined) normalized.map_scroll_wheel = false;
-    normalized.map_height = Number(normalized.map_height || 170);
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
     if (normalized.date_format === undefined) normalized.date_format = 'locale';
@@ -1318,6 +1316,9 @@ class SmhiAlertCard extends LitElement {
     delete normalized.collapse_details;
     if (Object.prototype.hasOwnProperty.call(normalized, 'hide_when_empty')) delete normalized.hide_when_empty;
     if (Object.prototype.hasOwnProperty.call(normalized, 'debug')) delete normalized.debug; // legacy
+    // `map_height` is deprecated (map is now responsive). Ignore saved configs that still include it.
+    if (Object.prototype.hasOwnProperty.call(normalized, 'map_height')) delete normalized.map_height;
+    if (Object.prototype.hasOwnProperty.call(normalized, 'map_zoom')) delete normalized.map_zoom; // legacy
     if (normalized.show_border === undefined) normalized.show_border = true; // kept for compat but unused
     return normalized;
   }
@@ -1334,7 +1335,6 @@ class SmhiAlertCard extends LitElement {
       show_icon: true,
       severity_background: false,
       show_map: false,
-      map_height: 170,
       map_zoom_controls: true,
       map_scroll_wheel: false,
       show_area: true,
@@ -1405,7 +1405,6 @@ class SmhiAlertCardEditor extends LitElement {
       { name: 'show_icon', label: 'Show icon', selector: { boolean: {} } },
       { name: 'severity_background', label: 'Severity background', selector: { boolean: {} } },
       { name: 'show_map', label: 'Show map (geometry)', selector: { boolean: {} } },
-      { name: 'map_height', label: 'Map height (px)', selector: { number: { min: 90, max: 420, mode: 'box' } } },
       { name: 'map_zoom_controls', label: 'Map zoom controls (+/−)', selector: { boolean: {} } },
       { name: 'map_scroll_wheel', label: 'Map scroll wheel zoom', selector: { boolean: {} } },
       { name: 'max_items', label: 'Max items', selector: { number: { min: 0, mode: 'box' } } },
@@ -1445,7 +1444,6 @@ class SmhiAlertCardEditor extends LitElement {
       show_icon: this._config.show_icon !== undefined ? this._config.show_icon : true,
       severity_background: this._config.severity_background !== undefined ? this._config.severity_background : false,
       show_map: this._config.show_map !== undefined ? this._config.show_map : false,
-      map_height: this._config.map_height !== undefined ? this._config.map_height : 170,
       map_zoom_controls: this._config.map_zoom_controls !== undefined ? this._config.map_zoom_controls : true,
       map_scroll_wheel: this._config.map_scroll_wheel !== undefined ? this._config.map_scroll_wheel : false,
       max_items: this._config.max_items ?? 0,
@@ -1483,16 +1481,10 @@ class SmhiAlertCardEditor extends LitElement {
     const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
     const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
 
-    const mapHint =
-      lang.startsWith('sv')
-        ? {
-            title: 'Obs: Kräver inställning i integrationen',
-            text: 'För att “Show map (geometry)” ska fungera behöver du aktivera “Include geometry (map polygons)” i SMHI Alerts-integrationen (Inställningar → Enheter & tjänster → SMHI Alerts → Konfigurera).',
-          }
-        : {
-            title: 'Note: Requires an integration setting',
-            text: 'For “Show map (geometry)” to work, enable “Include geometry (map polygons)” in the SMHI Alerts integration (Settings → Devices & Services → SMHI Alerts → Configure).',
-          };
+    const mapHint = {
+      title: 'Note: Requires an integration setting',
+      text: 'For “Show map (geometry)” to work, enable “Include geometry (map polygons)” in the SMHI Alerts integration (Settings → Devices & Services → SMHI Alerts → Configure).',
+    };
 
     // Keep original schema order, but insert the hint directly below "show_map"
     // by splitting the form at that exact point.
@@ -1672,7 +1664,6 @@ class SmhiAlertCardEditor extends LitElement {
       show_icon: 'Show icon',
       severity_background: 'Severity background',
       show_map: 'Show map (geometry)',
-      map_height: 'Map height (px)',
       map_zoom_controls: 'Map zoom controls (+/−)',
       map_scroll_wheel: 'Map scroll wheel zoom',
       max_items: 'Max items',
