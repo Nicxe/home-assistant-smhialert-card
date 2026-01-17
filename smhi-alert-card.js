@@ -1,4 +1,18 @@
-import { LitElement, html, css } from 'https://unpkg.com/lit?module';
+// Använd HA:s inbyggda Lit om tillgängligt, annars fallback till CDN
+const getLit = async () => {
+  // Home Assistant 2023.4+ exponerar Lit globalt
+  if (window.LitElement && window.litHtml) {
+    return {
+      LitElement: window.LitElement,
+      html: window.litHtml.html,
+      css: window.litHtml.css,
+    };
+  }
+  // Fallback för äldre HA-versioner eller fristående testning
+  return import('https://unpkg.com/lit@3.1.0?module');
+};
+
+const { LitElement, html, css } = await getLit();
 
 const fireIcon = new URL('./fire.svg', import.meta.url).href;
 const waterShortageIcon = new URL('./waterShortage.svg', import.meta.url).href;
@@ -54,7 +68,7 @@ class SmhiAlertCard extends LitElement {
     }
     .alert {
       display: grid;
-      grid-template-columns: auto 1fr auto;
+      grid-template-columns: auto 1fr;
       gap: 12px;
       align-items: start;
       padding: 12px;
@@ -131,6 +145,8 @@ class SmhiAlertCard extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      flex: 1 1 auto;
+      min-width: 0;
     }
     /* In compact mode, apply a tiny optical offset so the text looks centered */
     .district.compact {
@@ -155,6 +171,37 @@ class SmhiAlertCard extends LitElement {
       color: var(--primary-text-color);
       overflow-wrap: anywhere;
     }
+    .details-text {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      line-height: 1.5;
+      font-family: inherit;
+      font-size: 0.95em;
+      color: var(--primary-text-color);
+      overflow-wrap: anywhere;
+    }
+    .details-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .details-heading {
+      font-weight: 600;
+      font-size: 1em;
+    }
+    .details-paragraph {
+      margin: 0;
+    }
+    .details-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+    }
+    .details-list li {
+      margin: 0;
+    }
     .details-toggle {
       color: var(--primary-color);
       cursor: pointer;
@@ -165,13 +212,11 @@ class SmhiAlertCard extends LitElement {
     .toggle-col {
       display: flex;
       justify-content: flex-end;
-      align-items: flex-start;
-      padding-top: 2px;
-      padding-right: 2px;
+      align-items: center;
+      margin-left: auto;
     }
     .toggle-col.compact {
       align-items: center;
-      padding-top: 0;
     }
     /* Compact toggle when placed in the right column (prevents it from consuming an extra line) */
     .details-toggle.compact {
@@ -180,7 +225,8 @@ class SmhiAlertCard extends LitElement {
       white-space: nowrap;
     }
     /* Ensure consistent spacing when details are expanded */
-    .details .meta + .md-text { margin-top: 6px; }
+    .details .meta + .md-text,
+    .details .meta + .details-text { margin-top: 6px; }
 
     /* Optional minimap (Leaflet) */
     .map-wrap {
@@ -196,7 +242,10 @@ class SmhiAlertCard extends LitElement {
     }
     .geo-map {
       width: 100%;
-      height: var(--smhi-alert-map-height, 170px);
+      aspect-ratio: var(--smhi-alert-map-aspect, 16 / 9);
+      height: auto;
+      min-height: var(--smhi-alert-map-min-height, 140px);
+      max-height: var(--smhi-alert-map-max-height, 260px);
       /* Leaflet attaches panes/controls with high z-index; lock them into this local stacking context */
       position: relative;
       z-index: 0 !important;
@@ -255,6 +304,22 @@ class SmhiAlertCard extends LitElement {
   constructor() {
     super();
     this._maps = new Map();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Rensa timers för att undvika minnesläckor
+    clearTimeout(this._holdTimer);
+    clearTimeout(this._tapTimer);
+    // Rensa Leaflet-kartinstanser
+    for (const [, entry] of this._maps.entries()) {
+      try {
+        entry?.map?.remove?.();
+      } catch (e) {
+        // Ignorera fel vid cleanup
+      }
+    }
+    this._maps.clear();
   }
 
   setConfig(config) {
@@ -355,25 +420,32 @@ class SmhiAlertCard extends LitElement {
     }
   }
 
+  _handleIconError(e, fallbackPath) {
+    const img = e.target;
+    if (img && img.src !== fallbackPath) {
+      img.src = fallbackPath;
+    }
+  }
+
   _iconTemplate(item) {
     if (item.code === 'MESSAGE') {
       const event = item.event.trim().toLowerCase();
       if (event === 'brandrisk' || event === 'fire risk') {
-        return html`<img class="icon" src="${fireIcon}" alt="icon" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/fire.svg';" />`;
+        return html`<img class="icon" src="${fireIcon}" alt="fire risk" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/fire.svg')} />`;
       } else if (event === 'risk för vattenbrist' || event === 'risk for water shortage') {
-        return html`<img class="icon" src="${waterShortageIcon}" alt="icon" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/waterShortage.svg';" />`;
+        return html`<img class="icon" src="${waterShortageIcon}" alt="water shortage" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/waterShortage.svg')} />`;
       } else if (event === 'höga temperaturer' || event === 'high temperatures') {
-        return html`<img class="icon" src="${temperatureIcon}" alt="icon" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/temperature.svg';" />`;
+        return html`<img class="icon" src="${temperatureIcon}" alt="high temperatures" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/temperature.svg')} />`;
       }
       return html`<ha-icon class="icon" icon="mdi:message-alert-outline" aria-hidden="true"></ha-icon>`;
     }
     switch (item.code) {
       case 'YELLOW':
-        return html`<img class="icon" src="${yellowWarningIcon}" alt="yellow" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/yellowWarning.svg';" />`;
+        return html`<img class="icon" src="${yellowWarningIcon}" alt="yellow warning" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/yellowWarning.svg')} />`;
       case 'ORANGE':
-        return html`<img class="icon" src="${orangeWarningIcon}" alt="orange" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/orangeWarning.svg';" />`;
+        return html`<img class="icon" src="${orangeWarningIcon}" alt="orange warning" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/orangeWarning.svg')} />`;
       case 'RED':
-        return html`<img class="icon" src="${redWarningIcon}" alt="red" onerror="this.onerror=null;this.src='/hacsfiles/home-assistant-smhialert-card/redWarning.svg';" />`;
+        return html`<img class="icon" src="${redWarningIcon}" alt="red warning" @error=${(e) => this._handleIconError(e, '/hacsfiles/home-assistant-smhialert-card/redWarning.svg')} />`;
       default:
         return html`<ha-icon class="icon" icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`;
     }
@@ -389,11 +461,8 @@ class SmhiAlertCard extends LitElement {
       ? (this.config.title || stateObj?.attributes?.friendly_name || 'SMHI')
       : undefined;
 
-    const mapHeight = Number(this.config?.map_height || 170);
-    const mapStyle = this.config?.show_map ? `--smhi-alert-map-height: ${mapHeight}px;` : '';
-
     return html`
-      <ha-card .header=${header} style=${mapStyle}>
+      <ha-card .header=${header}>
         ${messages.length === 0
           ? html`<div class="empty">${t('no_alerts')}</div>`
           : html`<div class="alerts">${this._renderGrouped(messages)}</div>`}
@@ -471,8 +540,7 @@ class SmhiAlertCard extends LitElement {
       if (this.config.show_text === false) return null;
       const txt = this._detailsText(item);
       if (!txt) return null;
-      const textContent = this._normalizeMultiline(txt);
-      return html`<div class="md-text">${textContent}</div>`;
+      return this._formatDetailsText(txt);
     };
 
     const mkMapBlock = () => {
@@ -604,6 +672,29 @@ class SmhiAlertCard extends LitElement {
         <div class="content ${isCompact ? 'compact' : ''}">
           <div class="title">
             <div class="district ${isCompact ? 'compact' : ''}">${item.descr || item.area || item.event || ''}</div>
+            ${expandable ? html`
+              <div class="toggle-col ${isCompact ? 'compact' : ''}">
+                <div
+                  class="details-toggle compact"
+                  role="button"
+                  tabindex="0"
+                  aria-expanded="${expanded}"
+                  title="${expanded ? t('hide_details') : t('show_details')}"
+                  @click=${(e) => this._toggleDetails(e, item, idx)}
+                  @pointerdown=${(e) => e.stopPropagation()}
+                  @pointerup=${(e) => e.stopPropagation()}
+                  @keydown=${(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      this._toggleDetails(e, item, idx);
+                    }
+                    e.stopPropagation();
+                  }}
+                >
+                  ${expanded ? t('hide_details') : t('show_details')}
+                </div>
+              </div>
+            ` : html``}
           </div>
           ${inlineBlocks.length > 0 ? html`${inlineBlocks}` : html``}
           ${expandable
@@ -616,28 +707,6 @@ class SmhiAlertCard extends LitElement {
               `
             : html``}
         </div>
-        ${expandable ? html`
-          <div class="toggle-col ${isCompact ? 'compact' : ''}">
-            <div
-              class="details-toggle compact"
-              role="button"
-              tabindex="0"
-              title="${expanded ? t('hide_details') : t('show_details')}"
-              @click=${(e) => this._toggleDetails(e, item, idx)}
-              @pointerdown=${(e) => e.stopPropagation()}
-              @pointerup=${(e) => e.stopPropagation()}
-              @keydown=${(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  this._toggleDetails(e, item, idx);
-                }
-                e.stopPropagation();
-              }}
-            >
-              ${expanded ? t('hide_details') : t('show_details')}
-            </div>
-          </div>
-        ` : html`<div></div>`}
       </div>`;
   }
 
@@ -671,6 +740,127 @@ class SmhiAlertCard extends LitElement {
     const minIndent = positive.length > 0 ? Math.min(...positive) : (indents.length > 0 ? Math.min(...indents) : 0);
     const deindented = lines.map((ln) => (minIndent > 0 && ln.startsWith(' '.repeat(minIndent)) ? ln.slice(minIndent) : ln));
     return deindented.join('\n');
+  }
+
+  _formatDetailsText(raw) {
+    const normalized = this._normalizeMultiline(raw);
+    if (!normalized) return null;
+    const sections = this._parseDetailsSections(normalized);
+    const hasHeadings = sections.some((section) => !!section.heading);
+    const hasBlankLines = /\n\s*\n/.test(normalized);
+    if (!hasHeadings && !hasBlankLines) {
+      return html`<div class="md-text">${normalized}</div>`;
+    }
+
+    const blocks = sections
+      .map((section) => {
+        const paragraphs = this._splitParagraphs(section.lines || []);
+        if (paragraphs.length === 0 && !section.heading) return null;
+        const wantsList = this._headingWantsList(section.heading, paragraphs);
+        const body = wantsList
+          ? html`<ul class="details-list">${paragraphs.map((p) => html`<li>${p}</li>`)}</ul>`
+          : html`${paragraphs.map((p) => html`<p class="details-paragraph">${p}</p>`)}`;
+        return html`
+          <div class="details-section">
+            ${section.heading ? html`<div class="details-heading">${section.heading}</div>` : html``}
+            ${body}
+          </div>
+        `;
+      })
+      .filter(Boolean);
+
+    return html`<div class="details-text">${blocks}</div>`;
+  }
+
+  _parseDetailsSections(text) {
+    const lines = String(text).split('\n');
+    const sections = [];
+    let current = null;
+
+    const pushCurrent = () => {
+      if (!current) return;
+      const trimmed = this._trimEmptyLines(current.lines || []);
+      if (trimmed.length === 0 && !current.heading) {
+        current = null;
+        return;
+      }
+      sections.push({ heading: current.heading, lines: trimmed });
+      current = null;
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (current) current.lines.push('');
+        continue;
+      }
+      const headingMatch = this._matchDetailsHeading(line);
+      if (headingMatch) {
+        pushCurrent();
+        current = { heading: headingMatch.heading, lines: [] };
+        if (headingMatch.rest) current.lines.push(headingMatch.rest);
+        continue;
+      }
+      if (!current) current = { heading: null, lines: [] };
+      current.lines.push(line);
+    }
+    pushCurrent();
+    return sections;
+  }
+
+  _matchDetailsHeading(line) {
+    const match = String(line).match(/^([^:]{2,80})\s*:\s*(.*)$/);
+    if (!match) return null;
+    const heading = match[1].trim();
+    if (!heading) return null;
+    const rest = (match[2] || '').trim();
+    const words = heading.split(/\s+/).filter(Boolean);
+    if (heading.length > 50 || words.length > 6) return null;
+    if (!/[A-Za-zÅÄÖåäö]/.test(heading)) return null;
+    if (/[0-9]/.test(heading) && !heading.includes('?')) return null;
+    if (/https?:\/\//i.test(heading)) return null;
+    return { heading, rest };
+  }
+
+  _trimEmptyLines(lines) {
+    let start = 0;
+    while (start < lines.length && !lines[start].trim()) start += 1;
+    let end = lines.length - 1;
+    while (end >= start && !lines[end].trim()) end -= 1;
+    return lines.slice(start, end + 1);
+  }
+
+  _splitParagraphs(lines) {
+    const paragraphs = [];
+    let current = [];
+    const flush = () => {
+      if (current.length === 0) return;
+      paragraphs.push(current.join(' ').replace(/\s+/g, ' ').trim());
+      current = [];
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        flush();
+        continue;
+      }
+      current.push(trimmed);
+    }
+    flush();
+    return paragraphs;
+  }
+
+  _headingWantsList(heading, paragraphs) {
+    if (!heading) return false;
+    if (!Array.isArray(paragraphs) || paragraphs.length < 2) return false;
+    const normalized = heading.trim().toLowerCase();
+    return normalized.includes('tänka')
+      || normalized.includes('att tänka')
+      || normalized.includes('tips')
+      || normalized.includes('advice')
+      || normalized.includes('recommendation')
+      || normalized.includes('what should i');
   }
 
   _toggleDetails(e, item, idx) {
@@ -725,19 +915,80 @@ class SmhiAlertCard extends LitElement {
   }
 
   _fmtTs(value) {
-    if (!value) return '';
-    try {
-      const d = new Date(value);
-      return d.toLocaleString();
-    } catch (e) {
-      return String(value);
-    }
+    return this._formatDate(value);
   }
 
   _fmtEnd(end) {
     const val = String(end || '').trim().toLowerCase();
     if (!end || val === 'okänt' || val === 'unknown') return this._t('unknown');
-    return this._fmtTs(end);
+    return this._formatDate(end);
+  }
+
+  _formatDate(value) {
+    if (!value) return '';
+    const date = this._parseDate(value);
+    if (!date) return String(value);
+    const locale = (this.hass?.language || 'en').toLowerCase();
+    const format = this.config?.date_format || 'locale';
+    if (format === 'weekday_time') {
+      return this._formatDateParts(
+        date,
+        locale,
+        { weekday: 'long' },
+        { hour: '2-digit', minute: '2-digit' },
+      );
+    }
+    if (format === 'day_month_time') {
+      return this._formatDateParts(
+        date,
+        locale,
+        { day: 'numeric', month: 'long' },
+        { hour: '2-digit', minute: '2-digit' },
+      );
+    }
+    if (format === 'day_month_time_year') {
+      return this._formatDateParts(
+        date,
+        locale,
+        { day: 'numeric', month: 'long', year: 'numeric' },
+        { hour: '2-digit', minute: '2-digit' },
+      );
+    }
+    return date.toLocaleString(locale);
+  }
+
+  _formatDateParts(date, locale, dateOptions, timeOptions) {
+    const safeTimeOptions = timeOptions ? { ...timeOptions } : null;
+    if (safeTimeOptions && !Object.prototype.hasOwnProperty.call(safeTimeOptions, 'hour12')) {
+      safeTimeOptions.hour12 = false;
+    }
+    const dateStr = dateOptions
+      ? new Intl.DateTimeFormat(locale, dateOptions).format(date)
+      : '';
+    const timeStr = safeTimeOptions
+      ? new Intl.DateTimeFormat(locale, safeTimeOptions).format(date)
+      : '';
+    if (dateStr && timeStr) return `${dateStr} ${timeStr}`;
+    return dateStr || timeStr || '';
+  }
+
+  _parseDate(value) {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === 'number') {
+      const numericDate = new Date(value);
+      return Number.isNaN(numericDate.getTime()) ? null : numericDate;
+    }
+    const raw = String(value).trim();
+    if (!raw) return null;
+    let normalized = raw;
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(raw)) {
+      normalized = raw.replace(' ', 'T');
+    }
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   _showHeader() {
@@ -1040,13 +1291,16 @@ class SmhiAlertCard extends LitElement {
     if (normalized.show_icon === undefined) normalized.show_icon = true;
     if (normalized.severity_background === undefined) normalized.severity_background = false;
     if (normalized.show_map === undefined) normalized.show_map = false;
-    if (normalized.map_height === undefined) normalized.map_height = 170;
     if (normalized.map_zoom_controls === undefined) normalized.map_zoom_controls = true;
     if (normalized.map_scroll_wheel === undefined) normalized.map_scroll_wheel = false;
-    normalized.map_height = Number(normalized.map_height || 170);
     if (normalized.max_items === undefined) normalized.max_items = 0;
     if (normalized.sort_order === undefined) normalized.sort_order = 'severity_then_time';
+    if (normalized.date_format === undefined) normalized.date_format = 'locale';
     if (normalized.group_by === undefined) normalized.group_by = 'none';
+    const allowedDateFormats = ['locale', 'day_month_time', 'weekday_time', 'day_month_time_year'];
+    if (!allowedDateFormats.includes(normalized.date_format)) {
+      normalized.date_format = 'locale';
+    }
     if (!Array.isArray(normalized.meta_order) || normalized.meta_order.length === 0) {
       // Default to placing text + map in the details section (after divider)
       normalized.meta_order = ['area','type','level','severity','published','period','divider','text','map'];
@@ -1062,6 +1316,9 @@ class SmhiAlertCard extends LitElement {
     delete normalized.collapse_details;
     if (Object.prototype.hasOwnProperty.call(normalized, 'hide_when_empty')) delete normalized.hide_when_empty;
     if (Object.prototype.hasOwnProperty.call(normalized, 'debug')) delete normalized.debug; // legacy
+    // `map_height` is deprecated (map is now responsive). Ignore saved configs that still include it.
+    if (Object.prototype.hasOwnProperty.call(normalized, 'map_height')) delete normalized.map_height;
+    if (Object.prototype.hasOwnProperty.call(normalized, 'map_zoom')) delete normalized.map_zoom; // legacy
     if (normalized.show_border === undefined) normalized.show_border = true; // kept for compat but unused
     return normalized;
   }
@@ -1078,7 +1335,6 @@ class SmhiAlertCard extends LitElement {
       show_icon: true,
       severity_background: false,
       show_map: false,
-      map_height: 170,
       map_zoom_controls: true,
       map_scroll_wheel: false,
       show_area: true,
@@ -1090,6 +1346,7 @@ class SmhiAlertCard extends LitElement {
       show_text: true,
       max_items: 0,
       sort_order: 'severity_then_time',
+      date_format: 'locale',
       group_by: 'none',
       filter_severities: [],
       filter_areas: [],
@@ -1126,6 +1383,21 @@ class SmhiAlertCardEditor extends LitElement {
 
   render() {
     if (!this.hass || !this._config) return html``;
+    const lang = (this.hass?.language || 'en').toLowerCase();
+    const dateFormatOptions = lang.startsWith('sv')
+      ? [
+          { value: 'locale', label: 'Systemstandard' },
+          { value: 'day_month_time', label: '14 januari 13:00' },
+          { value: 'weekday_time', label: 'Onsdag 13:00' },
+          { value: 'day_month_time_year', label: '14 januari 2026 13:00' },
+        ]
+      : [
+          { value: 'locale', label: 'System default' },
+          { value: 'day_month_time', label: '14 January 13:00' },
+          { value: 'weekday_time', label: 'Wednesday 13:00' },
+          { value: 'day_month_time_year', label: '14 January 2026 13:00' },
+        ];
+    const dateFormatLabel = lang.startsWith('sv') ? 'Datumformat' : 'Date format';
     const schema = [
       { name: 'entity', label: 'Entity', required: true, selector: { entity: { domain: 'sensor' } } },
       { name: 'title', label: 'Title', selector: { text: {} } },
@@ -1133,7 +1405,6 @@ class SmhiAlertCardEditor extends LitElement {
       { name: 'show_icon', label: 'Show icon', selector: { boolean: {} } },
       { name: 'severity_background', label: 'Severity background', selector: { boolean: {} } },
       { name: 'show_map', label: 'Show map (geometry)', selector: { boolean: {} } },
-      { name: 'map_height', label: 'Map height (px)', selector: { number: { min: 90, max: 420, mode: 'box' } } },
       { name: 'map_zoom_controls', label: 'Map zoom controls (+/−)', selector: { boolean: {} } },
       { name: 'map_scroll_wheel', label: 'Map scroll wheel zoom', selector: { boolean: {} } },
       { name: 'max_items', label: 'Max items', selector: { number: { min: 0, mode: 'box' } } },
@@ -1144,6 +1415,7 @@ class SmhiAlertCardEditor extends LitElement {
           { value: 'time_desc', label: 'Time (newest first)' },
         ] } },
       },
+      { name: 'date_format', label: dateFormatLabel, selector: { select: { mode: 'dropdown', options: dateFormatOptions } } },
       { name: 'group_by', label: 'Group by', selector: { select: { mode: 'dropdown', options: [
         { value: 'none', label: 'No grouping' },
         { value: 'area', label: 'By area' },
@@ -1172,11 +1444,11 @@ class SmhiAlertCardEditor extends LitElement {
       show_icon: this._config.show_icon !== undefined ? this._config.show_icon : true,
       severity_background: this._config.severity_background !== undefined ? this._config.severity_background : false,
       show_map: this._config.show_map !== undefined ? this._config.show_map : false,
-      map_height: this._config.map_height !== undefined ? this._config.map_height : 170,
       map_zoom_controls: this._config.map_zoom_controls !== undefined ? this._config.map_zoom_controls : true,
       map_scroll_wheel: this._config.map_scroll_wheel !== undefined ? this._config.map_scroll_wheel : false,
       max_items: this._config.max_items ?? 0,
       sort_order: this._config.sort_order || 'severity_then_time',
+      date_format: this._config.date_format || 'locale',
       group_by: this._config.group_by || 'none',
       filter_severities: this._config.filter_severities || [],
       filter_areas: (this._config.filter_areas || []).join(', '),
@@ -1209,17 +1481,10 @@ class SmhiAlertCardEditor extends LitElement {
     const schemaTop = schema.filter((s) => !['tap_action','double_tap_action','hold_action'].includes(s.name));
     const schemaActions = schema.filter((s) => ['tap_action','double_tap_action','hold_action'].includes(s.name));
 
-    const lang = (this.hass?.language || 'en').toLowerCase();
-    const mapHint =
-      lang.startsWith('sv')
-        ? {
-            title: 'Obs: Kräver inställning i integrationen',
-            text: 'För att “Show map (geometry)” ska fungera behöver du aktivera “Include geometry (map polygons)” i SMHI Alerts-integrationen (Inställningar → Enheter & tjänster → SMHI Alerts → Konfigurera).',
-          }
-        : {
-            title: 'Note: Requires an integration setting',
-            text: 'For “Show map (geometry)” to work, enable “Include geometry (map polygons)” in the SMHI Alerts integration (Settings → Devices & Services → SMHI Alerts → Configure).',
-          };
+    const mapHint = {
+      title: 'Note: Requires an integration setting',
+      text: 'For “Show map (geometry)” to work, enable “Include geometry (map polygons)” in the SMHI Alerts integration (Settings → Devices & Services → SMHI Alerts → Configure).',
+    };
 
     // Keep original schema order, but insert the hint directly below "show_map"
     // by splitting the form at that exact point.
@@ -1391,6 +1656,7 @@ class SmhiAlertCardEditor extends LitElement {
   }
 
   _computeLabel = (schema) => {
+    if (schema.label) return schema.label;
     const labels = {
       entity: 'Entity',
       title: 'Title',
@@ -1398,11 +1664,11 @@ class SmhiAlertCardEditor extends LitElement {
       show_icon: 'Show icon',
       severity_background: 'Severity background',
       show_map: 'Show map (geometry)',
-      map_height: 'Map height (px)',
       map_zoom_controls: 'Map zoom controls (+/−)',
       map_scroll_wheel: 'Map scroll wheel zoom',
       max_items: 'Max items',
       sort_order: 'Sort order',
+      date_format: 'Date format',
       group_by: 'Group by',
       filter_severities: 'Filter severities',
       filter_areas: 'Filter areas (comma-separated)',
@@ -1444,14 +1710,6 @@ SmhiAlertCard.prototype._onRowAction = function (e, item) {
   }
   const action = this.config?.tap_action || { action: 'more-info' };
   this._runAction(action, item);
-};
-
-SmhiAlertCard.prototype._onKeydown = function (e, item) {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    const action = this.config?.tap_action || { action: 'more-info' };
-    this._runAction(action, item);
-  }
 };
 
 SmhiAlertCard.prototype._runAction = function (action, item) {
