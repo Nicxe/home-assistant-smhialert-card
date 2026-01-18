@@ -9,5 +9,6 @@ permissions:
 
 jobs:
   sync:
-    uses: nicxe/.github/.github/workflows/reusable-sync-main-to-beta.yml@main
+    if: ${{ github.event.release.prerelease == false && github.event.release.target_commitish == 'main' }}
+    uses: nicxe/.github/.github/workflows/resusable-sync-main-back-to-beta.yml@main
     secrets: inherit
